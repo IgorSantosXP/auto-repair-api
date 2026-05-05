@@ -1,0 +1,938 @@
+---
+openapi: 3.0.1
+info:
+  title: Auto Repair API
+  version: v1
+  description: Backend API for auto repair shop management system
+paths:
+  "/api/v1/auth/login":
+    post:
+      summary: Authenticates an admin user
+      tags:
+      - Auth
+      parameters: []
+      responses:
+        '200':
+          description: successful login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      email:
+                        type: string
+                      name:
+                        type: string
+                      role:
+                        type: string
+        '401':
+          description: invalid credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  example: admin@autorepair.com
+                password:
+                  type: string
+                  example: admin123456
+              required:
+              - email
+              - password
+  "/api/v1/customer/service_orders/{uuid}":
+    parameters:
+    - name: uuid
+      in: path
+      description: UUID público da ordem de serviço (recebido no link enviado ao cliente)
+      example: 550e8400-e29b-41d4-a716-446655440000
+      required: true
+      schema:
+        type: string
+    get:
+      summary: Shows order status to customer
+      tags:
+      - Customer
+      description: Endpoint público (sem autenticação). Retorna status, itens e histórico
+        da OS. Use o UUID do link enviado ao cliente.
+      responses:
+        '200':
+          description: order found
+        '404':
+          description: order not found
+  "/api/v1/customer/service_orders/{uuid}/approve":
+    parameters:
+    - name: uuid
+      in: path
+      description: UUID público da ordem de serviço
+      example: 550e8400-e29b-41d4-a716-446655440000
+      required: true
+      schema:
+        type: string
+    post:
+      summary: Customer approves the service order
+      tags:
+      - Customer
+      description: Endpoint público (sem autenticação). O token é recebido pelo cliente
+        via link (SMS/e-mail). Aprovação move a OS para 'approved'; o atendente inicia
+        a execução via start_execution.
+      parameters: []
+      responses:
+        '200':
+          description: order approved
+        '422':
+          description: invalid token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Token de aprovação recebido no link enviado ao cliente.
+                    Válido por 7 dias.
+                  example: xK9mP2qL8nR5vT1wY3zA6bC4dE7fG0hJ
+              required:
+              - token
+              example:
+                token: xK9mP2qL8nR5vT1wY3zA6bC4dE7fG0hJ
+  "/api/v1/customer/service_orders/{uuid}/reject":
+    parameters:
+    - name: uuid
+      in: path
+      description: UUID público da ordem de serviço
+      example: 550e8400-e29b-41d4-a716-446655440000
+      required: true
+      schema:
+        type: string
+    post:
+      summary: Customer rejects the service order
+      tags:
+      - Customer
+      description: Endpoint público (sem autenticação). Rejeição zera o total da OS
+        e não movimenta estoque. O veículo ainda será entregue (transição para 'delivered'
+        pelo atendente).
+      parameters: []
+      responses:
+        '200':
+          description: order rejected
+        '422':
+          description: invalid token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Token de aprovação recebido no link enviado ao cliente.
+                    Válido por 7 dias.
+                  example: xK9mP2qL8nR5vT1wY3zA6bC4dE7fG0hJ
+              required:
+              - token
+              example:
+                token: xK9mP2qL8nR5vT1wY3zA6bC4dE7fG0hJ
+  "/api/v1/customers":
+    get:
+      summary: Lists customers
+      tags:
+      - Customers
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: page
+        in: query
+        required: false
+        example: 1
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        required: false
+        example: 20
+        schema:
+          type: integer
+      - name: name
+        in: query
+        required: false
+        example: João
+        schema:
+          type: string
+      responses:
+        '200':
+          description: list returned
+        '401':
+          description: unauthorized
+    post:
+      summary: Creates a customer
+      tags:
+      - Customers
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '201':
+          description: customer created
+        '422':
+          description: validation error
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                  - individual
+                  - company
+                  description: "'individual' para pessoa física (CPF), 'company' para
+                    pessoa jurídica (CNPJ)"
+                  example: individual
+                document:
+                  type: string
+                  description: 'CPF (ex: 529.982.247-25) para individual ou CNPJ (ex:
+                    11.222.333/0001-81) para company. Aceita com ou sem formatação.'
+                  example: 529.982.247-25
+                name:
+                  type: string
+                  description: Nome completo ou razão social
+                  example: João da Silva
+                email:
+                  type: string
+                  description: E-mail de contato
+                  example: joao@email.com
+                phone:
+                  type: string
+                  description: Telefone com DDD
+                  example: '11999990000'
+              required:
+              - kind
+              - document
+              - name
+              example:
+                kind: individual
+                document: 529.982.247-25
+                name: João da Silva
+                email: joao@email.com
+                phone: '11999990000'
+  "/api/v1/customers/{id}":
+    parameters:
+    - name: id
+      in: path
+      description: ID do cliente
+      example: 1
+      required: true
+      schema:
+        type: integer
+    get:
+      summary: Shows a customer
+      tags:
+      - Customers
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: customer found
+        '404':
+          description: customer not found
+    patch:
+      summary: Updates a customer
+      tags:
+      - Customers
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '200':
+          description: customer updated
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Nome completo ou razão social
+                  example: João da Silva Atualizado
+                email:
+                  type: string
+                  description: E-mail de contato
+                  example: novo@email.com
+                phone:
+                  type: string
+                  description: Telefone com DDD
+                  example: '11988880000'
+              example:
+                name: João da Silva Atualizado
+                phone: '11988880000'
+    delete:
+      summary: Soft deletes a customer
+      tags:
+      - Customers
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: customer deleted
+  "/api/v1/parts":
+    get:
+      summary: Lists parts
+      tags:
+      - Parts
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: list returned
+    post:
+      summary: Creates a part
+      tags:
+      - Parts
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '201':
+          description: part created
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sku:
+                  type: string
+                  description: Código único da peça (Stock Keeping Unit)
+                  example: FIL-OLEO-5W30
+                name:
+                  type: string
+                  description: Nome da peça
+                  example: Filtro de óleo 5W30
+                description:
+                  type: string
+                  description: Descrição adicional da peça
+                  example: Filtro de óleo para motores 1.0 a 2.0
+                unit_price_cents:
+                  type: integer
+                  description: 'Preço unitário em centavos (ex: 2500 = R$ 25,00)'
+                  example: 2500
+              required:
+              - sku
+              - name
+              - unit_price_cents
+              example:
+                sku: FIL-OLEO-5W30
+                name: Filtro de óleo 5W30
+                description: Filtro de óleo para motores 1.0 a 2.0
+                unit_price_cents: 2500
+  "/api/v1/parts/{id}/stock":
+    parameters:
+    - name: id
+      in: path
+      description: ID da peça
+      example: 1
+      required: true
+      schema:
+        type: integer
+    get:
+      summary: Returns current stock balance
+      tags:
+      - Parts
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: balance returned
+  "/api/v1/parts/{part_id}/stock_movements":
+    parameters:
+    - name: part_id
+      in: path
+      description: ID da peça
+      example: 1
+      required: true
+      schema:
+        type: integer
+    post:
+      summary: Registers a stock movement
+      tags:
+      - Parts
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '201':
+          description: movement registered
+        '422':
+          description: insufficient stock
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                movement_type:
+                  type: string
+                  enum:
+                  - inbound
+                  - outbound
+                  - adjustment_in
+                  - adjustment_out
+                  description: "'inbound' = entrada por compra | 'outbound' = saída
+                    por uso | 'adjustment_in' = ajuste positivo | 'adjustment_out'
+                    = ajuste negativo"
+                  example: inbound
+                quantity:
+                  type: integer
+                  description: Quantidade (sempre positivo — o tipo determina se soma
+                    ou subtrai do saldo)
+                  example: 10
+                reason:
+                  type: string
+                  description: Motivo da movimentação
+                  example: Compra NF 1234
+              required:
+              - movement_type
+              - quantity
+              example:
+                movement_type: inbound
+                quantity: 10
+                reason: Compra NF 1234
+  "/api/v1/reports/metrics":
+    get:
+      summary: Returns average execution time metrics
+      tags:
+      - Reports
+      security:
+      - bearerAuth: []
+      description: Retorna o tempo médio de execução das ordens de serviço finalizadas.
+        Calculado com base em execution_started_at e finished_at.
+      parameters:
+      - name: from
+        in: query
+        required: false
+        description: Data inicial do período (YYYY-MM-DD). Filtra por execution_started_at.
+        example: '2026-01-01'
+        schema:
+          type: string
+      - name: to
+        in: query
+        required: false
+        description: Data final do período (YYYY-MM-DD). Filtra por finished_at.
+        example: '2026-12-31'
+        schema:
+          type: string
+      responses:
+        '200':
+          description: empty result when no orders
+        '400':
+          description: invalid date format
+        '401':
+          description: unauthorized
+  "/api/v1/service_orders":
+    get:
+      summary: Lists service orders
+      tags:
+      - Service Orders
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: page
+        in: query
+        required: false
+        example: 1
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        required: false
+        example: 20
+        schema:
+          type: integer
+      - name: status
+        in: query
+        required: false
+        description: 'Filtrar por status: received | in_diagnosis | awaiting_approval
+          | in_execution | finished | delivered'
+        example: received
+        schema:
+          type: string
+      - name: customer_id
+        in: query
+        required: false
+        description: Filtrar por ID do cliente
+        schema:
+          type: integer
+      - name: vehicle_id
+        in: query
+        required: false
+        description: Filtrar por ID do veículo
+        schema:
+          type: integer
+      - name: from
+        in: query
+        required: false
+        description: Data inicial (YYYY-MM-DD)
+        example: '2026-01-01'
+        schema:
+          type: string
+      - name: to
+        in: query
+        required: false
+        description: Data final (YYYY-MM-DD)
+        example: '2026-12-31'
+        schema:
+          type: string
+      responses:
+        '200':
+          description: list returned
+        '401':
+          description: unauthorized
+    post:
+      summary: Creates a service order
+      tags:
+      - Service Orders
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '201':
+          description: order created
+        '422':
+          description: validation error
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: integer
+                  description: ID do cliente
+                  example: 1
+                vehicle_id:
+                  type: integer
+                  description: ID do veículo
+                  example: 1
+                diagnosis_notes:
+                  type: string
+                  description: Observações do diagnóstico inicial (opcional)
+                  example: Cliente relata barulho ao frear
+                items:
+                  type: array
+                  description: Lista de serviços e/ou peças da OS. Cada item deve
+                    ter exatamente um de service_id ou part_id.
+                  items:
+                    type: object
+                    properties:
+                      service_id:
+                        type: integer
+                        description: ID do serviço (use este ou part_id, nunca ambos)
+                        example: 1
+                      part_id:
+                        type: integer
+                        description: ID da peça (use este ou service_id, nunca ambos)
+                        example: 2
+                      quantity:
+                        type: integer
+                        description: Quantidade
+                        example: 1
+              required:
+              - customer_id
+              - vehicle_id
+              - items
+              example:
+                customer_id: 1
+                vehicle_id: 1
+                diagnosis_notes: Cliente relata barulho ao frear
+                items:
+                - service_id: 1
+                  quantity: 1
+                - part_id: 2
+                  quantity: 2
+  "/api/v1/service_orders/{id}":
+    parameters:
+    - name: id
+      in: path
+      description: ID da ordem de serviço
+      example: 1
+      required: true
+      schema:
+        type: integer
+    get:
+      summary: Shows a service order
+      tags:
+      - Service Orders
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: order found
+        '404':
+          description: order not found
+    patch:
+      summary: Updates a service order
+      tags:
+      - Service Orders
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '200':
+          description: order updated
+        '422':
+          description: cannot update in current status
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Apenas ordens em status 'received' ou 'in_diagnosis' podem
+                ser atualizadas.
+              properties:
+                diagnosis_notes:
+                  type: string
+                  description: Observações do diagnóstico
+                  example: Pastilhas de freio dianteiras desgastadas. Disco com leve
+                    empenamento.
+                items:
+                  type: array
+                  description: Substitui todos os itens da OS
+                  items:
+                    type: object
+                    properties:
+                      service_id:
+                        type: integer
+                        example: 1
+                      part_id:
+                        type: integer
+                        example: 2
+                      quantity:
+                        type: integer
+                        example: 1
+              example:
+                diagnosis_notes: Pastilhas de freio dianteiras desgastadas.
+                items:
+                - service_id: 1
+                  quantity: 1
+                - part_id: 2
+                  quantity: 2
+  "/api/v1/service_orders/{id}/transitions":
+    parameters:
+    - name: id
+      in: path
+      description: ID da ordem de serviço
+      example: 1
+      required: true
+      schema:
+        type: integer
+    post:
+      summary: Transitions a service order to a new status
+      tags:
+      - Service Orders
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '200':
+          description: transition successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      uuid:
+                        type: string
+                      status:
+                        type: string
+                        example: in_diagnosis
+                      total_cents:
+                        type: integer
+                      available_events:
+                        type: array
+                        items:
+                          type: string
+                        description: Events that can be triggered from the current
+                          status
+                        example:
+                        - send_for_approval
+                  approval_link:
+                    type: string
+                    nullable: true
+                    description: Only present when event is 'send_for_approval'
+                    example: "/api/v1/customer/service_orders/uuid/approve?token=abc123"
+        '422':
+          description: invalid transition
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event:
+                  type: string
+                  enum:
+                  - start_diagnosis
+                  - send_for_approval
+                  - start_execution
+                  - finalize
+                  - deliver
+                  description: |-
+                    Eventos disponíveis por status:
+                      received → start_diagnosis
+                      in_diagnosis → send_for_approval (gera link de aprovação para o cliente)
+                      awaiting_approval → send_for_approval (reenvia link, invalida token anterior)
+                      approved → start_execution (reserva estoque e inicia execução)
+                      in_execution → finalize
+                      finished → deliver
+                  example: start_diagnosis
+              required:
+              - event
+              example:
+                event: start_diagnosis
+  "/api/v1/services":
+    get:
+      summary: Lists services
+      tags:
+      - Services
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: list returned
+    post:
+      summary: Creates a service
+      tags:
+      - Services
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '201':
+          description: service created
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Nome do serviço (único no sistema)
+                  example: Troca de óleo
+                description:
+                  type: string
+                  description: Descrição detalhada do serviço
+                  example: Troca de óleo do motor com filtro
+                base_price_cents:
+                  type: integer
+                  description: 'Preço base em centavos (ex: 5000 = R$ 50,00)'
+                  example: 8000
+                estimated_duration_minutes:
+                  type: integer
+                  description: Duração estimada em minutos
+                  example: 60
+              required:
+              - name
+              - base_price_cents
+              example:
+                name: Troca de óleo
+                description: Troca de óleo do motor com filtro
+                base_price_cents: 8000
+                estimated_duration_minutes: 60
+  "/api/v1/services/{id}":
+    parameters:
+    - name: id
+      in: path
+      description: ID do serviço
+      example: 1
+      required: true
+      schema:
+        type: integer
+    get:
+      summary: Shows a service
+      tags:
+      - Services
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: service found
+        '404':
+          description: not found
+    patch:
+      summary: Updates a service
+      tags:
+      - Services
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '200':
+          description: updated
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Novo nome do serviço
+                  example: Troca de óleo premium
+                base_price_cents:
+                  type: integer
+                  description: Novo preço em centavos
+                  example: 9500
+                description:
+                  type: string
+                  description: Nova descrição do serviço
+                  example: Óleo sintético 5W40
+                estimated_duration_minutes:
+                  type: integer
+                  description: Nova duração em minutos
+                  example: 45
+              example:
+                name: Troca de óleo premium
+                base_price_cents: 9500
+    delete:
+      summary: Soft deletes a service
+      tags:
+      - Services
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: deleted
+  "/api/v1/vehicles":
+    get:
+      summary: Lists vehicles
+      tags:
+      - Vehicles
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: customer_id
+        in: query
+        required: false
+        description: Filtrar por ID do cliente
+        schema:
+          type: integer
+      - name: license_plate
+        in: query
+        required: false
+        description: Filtrar por placa (parcial)
+        example: ABC1234
+        schema:
+          type: string
+      responses:
+        '200':
+          description: list returned
+    post:
+      summary: Creates a vehicle
+      tags:
+      - Vehicles
+      security:
+      - bearerAuth: []
+      parameters: []
+      responses:
+        '201':
+          description: vehicle created
+        '422':
+          description: invalid plate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id:
+                  type: integer
+                  description: ID do cliente proprietário
+                  example: 1
+                license_plate:
+                  type: string
+                  description: Placa no formato Mercosul (ABC1D23) ou antigo (ABC1234).
+                    Maiúsculas ou minúsculas aceitas.
+                  example: ABC1D23
+                brand:
+                  type: string
+                  description: Marca do veículo
+                  example: Toyota
+                model:
+                  type: string
+                  description: Modelo do veículo
+                  example: Corolla
+                year:
+                  type: integer
+                  description: Ano de fabricação
+                  example: 2022
+              required:
+              - customer_id
+              - license_plate
+              - brand
+              - model
+              - year
+              example:
+                customer_id: 1
+                license_plate: ABC1D23
+                brand: Toyota
+                model: Corolla
+                year: 2022
+  "/api/v1/customers/{customer_id}/vehicles":
+    parameters:
+    - name: customer_id
+      in: path
+      description: ID do cliente
+      example: 1
+      required: true
+      schema:
+        type: integer
+    get:
+      summary: Lists vehicles for a customer
+      tags:
+      - Vehicles
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: list returned
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas: {}
+servers:
+- url: http://localhost:3000
+  description: Development
