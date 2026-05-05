@@ -17,7 +17,7 @@ O projeto segue DDD por contexto delimitado em `app/domains/`:
 ```
 app/domains/
   identity/        # Usuário, JWT, caso de uso de autenticação
-  catalog/         # Cliente, Veículo, Serviço — value objects CPF/CNPJ/placa
+  registries/      # Cliente, Veículo, Serviço — value objects CPF/CNPJ/placa
   inventory/       # Peça, Movimentação de estoque, calculadora de saldo
   service_orders/  # Ciclo completo: máquina de estados, token de aprovação, orçamento
   reports/         # Queries de métricas
@@ -66,7 +66,7 @@ senha: admin123456
 bundle exec rspec
 ```
 
-SimpleCov exige ≥ 80% de cobertura nos domínios críticos. Relatório gerado em `coverage/index.html`.
+SimpleCov exige ≥ 80% de cobertura nos domínios críticos. O relatório de cobertura é gerado localmente em `coverage/index.html` (não versionado).
 
 ## Documentação da API
 
@@ -113,8 +113,37 @@ bundle exec rake rswag:specs:swaggerize
 ## Ciclo de Vida da Ordem de Serviço
 
 ```
-recebida → em_diagnóstico → aguardando_aprovação → em_execução → finalizada → entregue
-                                                 ↘ finalizada (rejeitada) → entregue
+received → in_diagnosis → awaiting_approval → approved → in_execution → finished → delivered
+                                           ↘ finished (rejected) → delivered
 ```
 
-Quando o orçamento é enviado para aprovação, o cliente recebe um link com token único (hash SHA256, TTL 7 dias). Ao aprovar, o estoque é reservado e os itens marcados como executados. Ao rejeitar, o total é zerado, mas o veículo segue para `entregue` pois está fisicamente na oficina.
+### Eventos de transição (admin)
+
+| Status atual | Evento | Próximo status |
+|---|---|---|
+| `received` | `start_diagnosis` | `in_diagnosis` |
+| `in_diagnosis` | `send_for_approval` | `awaiting_approval` |
+| `awaiting_approval` | `send_for_approval` | `awaiting_approval` (reenvio — invalida token anterior) |
+| `approved` | `start_execution` | `in_execution` |
+| `in_execution` | `finalize` | `finished` |
+| `finished` | `deliver` | `delivered` |
+
+### Fluxo de aprovação
+
+1. Atendente envia para aprovação (`send_for_approval`) — a API retorna um `approval_link` com token único (SHA256, TTL 7 dias)
+2. Cliente acessa o link e aprova (`POST .../approve`) — ordem vai para `approved`; estoque **não** é movimentado neste momento
+3. Atendente aciona `start_execution` — estoque é reservado e itens marcados como executados; ordem vai para `in_execution`
+4. Se o estoque estiver insuficiente, o erro aparece **apenas para o atendente** no passo 3 — o cliente nunca vê erros internos de estoque
+
+Ao rejeitar, o total é zerado e nenhuma movimentação de estoque é gerada. O veículo ainda transiciona para `delivered` pois está fisicamente na oficina.
+
+Todas as respostas de ordem de serviço incluem o campo `available_events` indicando quais eventos podem ser acionados a partir do status atual.
+
+## Análise de Segurança
+
+O diretório raiz contém os relatórios gerados pelas ferramentas de análise estática:
+
+- `brakeman_report.html` — Brakeman 8.0.4 (80+ categorias de vulnerabilidades Rails)
+- `bundler_audit_report.txt` — bundler-audit contra ruby-advisory-db (1.078 advisories)
+
+Resultado: **0 vulnerabilidades** encontradas pelas ferramentas automatizadas. Ambas também rodam no CI via GitHub Actions.
