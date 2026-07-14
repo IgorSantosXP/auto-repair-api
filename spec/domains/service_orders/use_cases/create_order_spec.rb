@@ -61,4 +61,65 @@ RSpec.describe ServiceOrders::UseCases::CreateOrder do
       expect(result).to be_failure
     end
   end
+
+  describe ".call with customer and vehicle data" do
+    let(:customer_data) do
+      { kind: "individual", document: "529.982.247-25", name: "Maria Silva",
+        email: "maria@example.com", phone: "11 99999-0000" }
+    end
+    let(:vehicle_data) do
+      { license_plate: "abc-1234", brand: "Fiat", model: "Uno", year: 2018 }
+    end
+
+    def call_with_data(overrides = {})
+      described_class.call({
+        customer: customer_data,
+        vehicle:  vehicle_data,
+        items:    [{ service_id: service.id, quantity: 1 }]
+      }.merge(overrides), performed_by: admin)
+    end
+
+    it "creates customer and vehicle when they do not exist" do
+      result = call_with_data
+
+      expect(result).to be_success
+      expect(result.payload.customer.document).to eq("52998224725")
+      expect(result.payload.vehicle.license_plate).to eq("ABC1234")
+    end
+
+    it "reuses an existing customer found by document" do
+      existing = create(:customer, document: "52998224725")
+
+      result = call_with_data
+
+      expect(result).to be_success
+      expect(result.payload.customer_id).to eq(existing.id)
+      expect(Registries::Entities::Customer.where(document: "52998224725").count).to eq(1)
+    end
+
+    it "reuses an existing vehicle of the same customer found by plate" do
+      existing_customer = create(:customer, document: "52998224725")
+      existing_vehicle  = create(:vehicle, customer: existing_customer, license_plate: "ABC1234")
+
+      result = call_with_data
+
+      expect(result).to be_success
+      expect(result.payload.vehicle_id).to eq(existing_vehicle.id)
+    end
+
+    it "fails when the plate belongs to another customer" do
+      create(:vehicle, customer: create(:customer), license_plate: "ABC1234")
+
+      result = call_with_data
+
+      expect(result).to be_failure
+      expect(result.errors.first).to match(/registered to another customer/)
+    end
+
+    it "fails with invalid customer document" do
+      result = call_with_data(customer: customer_data.merge(document: "111.111.111-11"))
+
+      expect(result).to be_failure
+    end
+  end
 end

@@ -28,7 +28,9 @@ Rails.application.routes.draw do
         resources :service_orders, param: :uuid, only: [:show] do
           member do
             post :approve
+            get  :approve
             post :reject
+            get  :reject
           end
         end
       end

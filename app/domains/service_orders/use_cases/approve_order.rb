@@ -2,6 +2,12 @@ module ServiceOrders
   module UseCases
     class ApproveOrder
       def self.call(uuid:, token:)
+        result = approve(uuid: uuid, token: token)
+        Services::CustomerNotifier.status_changed(result.payload) if result.success?
+        result
+      end
+
+      private_class_method def self.approve(uuid:, token:)
         ActiveRecord::Base.transaction do
           order = Entities::ServiceOrder.find_by!(uuid: uuid)
 

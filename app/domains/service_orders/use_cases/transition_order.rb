@@ -2,6 +2,20 @@ module ServiceOrders
   module UseCases
     class TransitionOrder
       def self.call(order_id, event:, performed_by:)
+        result = transition(order_id, event: event, performed_by: performed_by)
+
+        if result.success?
+          Services::CustomerNotifier.status_changed(
+            result.payload[:order],
+            approval_link:  result.payload[:approval_link],
+            rejection_link: result.payload[:rejection_link]
+          )
+        end
+
+        result
+      end
+
+      private_class_method def self.transition(order_id, event:, performed_by:)
         ActiveRecord::Base.transaction do
           order = Entities::ServiceOrder.find(order_id)
           next_status = Services::StateMachine.transition(order.status, event)
@@ -46,11 +60,14 @@ module ServiceOrders
           )
 
           payload = { order: order.reload }
-          payload[:approval_link] = build_approval_link(order, token_data[:plain]) if event == "send_for_approval"
+          if event == "send_for_approval"
+            payload[:approval_link]  = build_customer_link(order, "approve", token_data[:plain])
+            payload[:rejection_link] = build_customer_link(order, "reject",  token_data[:plain])
+          end
 
           Rails.logger.info("[ServiceOrder] Transition #{order.uuid}: #{order.status_before_last_save} -> #{next_status} by user #{performed_by.id}")
           if event == "send_for_approval"
-            Rails.logger.info("[ServiceOrder] Approval link for #{order.uuid}: /api/v1/customer/service_orders/#{order.uuid}/approve?token=#{token_data[:plain]}")
+            Rails.logger.info("[ServiceOrder] Approval link for #{order.uuid}: #{payload[:approval_link]}")
           end
 
           Result.success(payload: payload)
@@ -61,8 +78,9 @@ module ServiceOrders
         Result.failure(errors: e.record.errors.full_messages)
       end
 
-      private_class_method def self.build_approval_link(order, plain_token)
-        "/api/v1/customer/service_orders/#{order.uuid}/approve?token=#{plain_token}"
+      private_class_method def self.build_customer_link(order, action, plain_token)
+        base_url = ENV.fetch("APP_BASE_URL", "http://localhost:3000")
+        "#{base_url}/api/v1/customer/service_orders/#{order.uuid}/#{action}?token=#{plain_token}"
       end
     end
   end

@@ -3,23 +3,16 @@ module Api
     class ServiceOrdersController < BaseController
       def index
         pag   = pagination_params
-        scope = ServiceOrders::Entities::ServiceOrder
-                  .includes(:customer, :vehicle, :items)
-
-        scope = scope.where(status:      params[:status])      if params[:status].present?
-        scope = scope.where(customer_id: params[:customer_id]) if params[:customer_id].present?
-        scope = scope.where(vehicle_id:  params[:vehicle_id])  if params[:vehicle_id].present?
-
-        if params[:from].present?
-          scope = scope.where("service_orders.created_at >= ?", Date.parse(params[:from]).beginning_of_day)
-        end
-        if params[:to].present?
-          scope = scope.where("service_orders.created_at <= ?", Date.parse(params[:to]).end_of_day)
-        end
+        scope = ServiceOrders::Queries::ListOrdersQuery.call(
+          status:      params[:status],
+          customer_id: params[:customer_id],
+          vehicle_id:  params[:vehicle_id],
+          from:        params[:from].presence && Date.parse(params[:from]),
+          to:          params[:to].presence && Date.parse(params[:to])
+        )
 
         total   = scope.count
-        records = scope.order(created_at: :desc)
-                       .offset((pag[:page] - 1) * pag[:per_page])
+        records = scope.offset((pag[:page] - 1) * pag[:per_page])
                        .limit(pag[:per_page])
 
         set_pagination_headers(total, pag[:page], pag[:per_page])
@@ -73,7 +66,9 @@ module Api
       def order_params
         params.permit(
           :customer_id, :vehicle_id, :diagnosis_notes,
-          items: [:service_id, :part_id, :quantity, :unit_price_cents]
+          customer: [:kind, :document, :name, :email, :phone],
+          vehicle:  [:license_plate, :brand, :model, :year],
+          items:    [:service_id, :part_id, :quantity, :unit_price_cents]
         )
       end
 

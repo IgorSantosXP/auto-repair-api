@@ -88,9 +88,10 @@ test:
 production:
   primary: &primary_production
     <<: *default
+    host: <%= ENV.fetch("DB_HOST", "db") %>
     database: auto_repair_api_production
-    username: auto_repair_api
-    password: <%= ENV["AUTO_REPAIR_API_DATABASE_PASSWORD"] %>
+    username: <%= ENV.fetch("POSTGRES_USER", "postgres") %>
+    password: <%= ENV["POSTGRES_PASSWORD"] %>
   cache:
     <<: *primary_production
     database: auto_repair_api_production_cache

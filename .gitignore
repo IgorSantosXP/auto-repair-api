@@ -37,3 +37,9 @@
 # RSpec local run cache
 /spec/examples.txt
 
+
+# Terraform
+/infra/.terraform/
+/infra/*.tfstate
+/infra/*.tfstate.backup
+/infra/*-config

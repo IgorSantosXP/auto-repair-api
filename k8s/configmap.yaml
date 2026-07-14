@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: auto-repair
+data:
+  DB_HOST: "db"
+  POSTGRES_USER: "postgres"
+  SMTP_HOST: "mailpit"
+  SMTP_PORT: "1025"
+  MAILER_FROM: "no-reply@autorepair.com"
+  APP_HOST: "localhost"
+  APP_BASE_URL: "http://localhost:8080"
+  SOLID_QUEUE_IN_PUMA: "1"
+  RAILS_LOG_LEVEL: "info"

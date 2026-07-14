@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="880" viewBox="0 0 1280 880" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#2f6feb"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="880" fill="#ffffff"/>
+  <text x="40" y="40" font-size="20" font-weight="bold" fill="#24292f">Auto Repair API — Arquitetura da Fase 2 (Kubernetes + Terraform + CI/CD)</text>
+
+  <!-- CI/CD flow -->
+  <text x="40" y="76" font-size="13" font-weight="bold" fill="#bf5700">Fluxo de deploy (CI/CD)</text>
+  <rect x="40" y="90" width="140" height="64" rx="8" fill="#fff8f0" stroke="#e8a552"/>
+  <text x="110" y="116" font-size="13" text-anchor="middle" fill="#24292f">Desenvolvedor</text>
+  <text x="110" y="136" font-size="12" text-anchor="middle" fill="#57606a">git push</text>
+
+  <rect x="240" y="90" width="150" height="64" rx="8" fill="#fff8f0" stroke="#e8a552"/>
+  <text x="315" y="116" font-size="13" text-anchor="middle" fill="#24292f">GitHub</text>
+  <text x="315" y="136" font-size="12" text-anchor="middle" fill="#57606a">repositório (main)</text>
+
+  <rect x="450" y="78" width="360" height="100" rx="8" fill="#fff8f0" stroke="#e8a552"/>
+  <text x="630" y="100" font-size="13" font-weight="bold" text-anchor="middle" fill="#24292f">GitHub Actions — pipeline CI/CD</text>
+  <rect x="465" y="112" width="100" height="50" rx="6" fill="#ffffff" stroke="#e8a552"/>
+  <text x="515" y="132" font-size="11" text-anchor="middle" fill="#24292f">Testes RSpec</text>
+  <text x="515" y="148" font-size="11" text-anchor="middle" fill="#24292f">+ Brakeman</text>
+  <rect x="580" y="112" width="100" height="50" rx="6" fill="#ffffff" stroke="#e8a552"/>
+  <text x="630" y="132" font-size="11" text-anchor="middle" fill="#24292f">Build imagem</text>
+  <text x="630" y="148" font-size="11" text-anchor="middle" fill="#24292f">Docker</text>
+  <rect x="695" y="112" width="100" height="50" rx="6" fill="#ffffff" stroke="#e8a552"/>
+  <text x="745" y="132" font-size="11" text-anchor="middle" fill="#24292f">Deploy no</text>
+  <text x="745" y="148" font-size="11" text-anchor="middle" fill="#24292f">cluster K8s</text>
+  <line x1="565" y1="137" x2="578" y2="137" stroke="#555" marker-end="url(#arrow)"/>
+  <line x1="680" y1="137" x2="693" y2="137" stroke="#555" marker-end="url(#arrow)"/>
+
+  <rect x="880" y="90" width="170" height="64" rx="8" fill="#fff8f0" stroke="#e8a552"/>
+  <text x="965" y="116" font-size="13" text-anchor="middle" fill="#24292f">GHCR</text>
+  <text x="965" y="136" font-size="11" text-anchor="middle" fill="#57606a">ghcr.io/.../auto-repair-api</text>
+
+  <line x1="180" y1="122" x2="238" y2="122" stroke="#555" marker-end="url(#arrow)"/>
+  <line x1="390" y1="122" x2="448" y2="122" stroke="#555" marker-end="url(#arrow)"/>
+  <line x1="810" y1="122" x2="878" y2="122" stroke="#555" marker-end="url(#arrow)"/>
+  <text x="844" y="112" font-size="10" text-anchor="middle" fill="#57606a">push</text>
+
+  <line x1="745" y1="178" x2="745" y2="256" stroke="#555" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <text x="755" y="222" font-size="11" fill="#57606a">kubectl apply -f k8s/</text>
+  <line x1="965" y1="154" x2="965" y2="256" stroke="#555" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <text x="975" y="222" font-size="11" fill="#57606a">pull da imagem</text>
+
+  <!-- Terraform -->
+  <text x="40" y="286" font-size="13" font-weight="bold" fill="#1a7f37">Infraestrutura provisionada (IaC)</text>
+  <rect x="40" y="300" width="180" height="140" rx="8" fill="#f0fff4" stroke="#57ab5a"/>
+  <text x="130" y="324" font-size="13" font-weight="bold" text-anchor="middle" fill="#24292f">Terraform (/infra)</text>
+  <text x="55" y="348" font-size="11" fill="#24292f">• cluster kind (2 nós)</text>
+  <text x="55" y="368" font-size="11" fill="#24292f">• metrics-server (helm)</text>
+  <text x="55" y="388" font-size="11" fill="#24292f">• namespace auto-repair</text>
+  <text x="55" y="408" font-size="11" fill="#24292f">• PostgreSQL (StatefulSet)</text>
+  <text x="55" y="428" font-size="11" fill="#24292f">• Secret do banco</text>
+  <line x1="220" y1="370" x2="256" y2="370" stroke="#1a7f37" marker-end="url(#arrow)"/>
+  <text x="238" y="358" font-size="10" text-anchor="middle" fill="#1a7f37">apply</text>
+
+  <!-- Cluster -->
+  <rect x="258" y="260" width="982" height="560" rx="10" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
+  <text x="278" y="288" font-size="15" font-weight="bold" fill="#24292f">Cluster Kubernetes — kind (control-plane + worker)</text>
+
+  <rect x="1000" y="304" width="220" height="80" rx="8" fill="#eef2f5" stroke="#8c959f" stroke-dasharray="4,3"/>
+  <text x="1110" y="330" font-size="12" font-weight="bold" text-anchor="middle" fill="#24292f">kube-system</text>
+  <text x="1110" y="352" font-size="12" text-anchor="middle" fill="#24292f">metrics-server</text>
+  <text x="1110" y="370" font-size="10" text-anchor="middle" fill="#57606a">métricas de CPU/memória</text>
+
+  <!-- Namespace -->
+  <rect x="278" y="310" width="700" height="490" rx="8" fill="#eff6ff" stroke="#2f6feb" stroke-dasharray="6,4"/>
+  <text x="298" y="336" font-size="13" font-weight="bold" fill="#2f6feb">namespace: auto-repair</text>
+
+  <rect x="300" y="370" width="150" height="80" rx="8" fill="#ffffff" stroke="#2f6feb"/>
+  <text x="375" y="396" font-size="12" font-weight="bold" text-anchor="middle" fill="#24292f">Service api</text>
+  <text x="375" y="416" font-size="11" text-anchor="middle" fill="#57606a">NodePort 30080</text>
+  <text x="375" y="434" font-size="11" text-anchor="middle" fill="#57606a">porta 80</text>
+
+  <rect x="500" y="356" width="230" height="170" rx="8" fill="#ffffff" stroke="#2f6feb"/>
+  <text x="615" y="380" font-size="12" font-weight="bold" text-anchor="middle" fill="#24292f">Deployment api</text>
+  <text x="615" y="398" font-size="10" text-anchor="middle" fill="#57606a">Rails 8 API + Solid Queue (Puma)</text>
+  <rect x="516" y="412" width="60" height="44" rx="6" fill="#dbe9ff" stroke="#2f6feb"/>
+  <text x="546" y="438" font-size="11" text-anchor="middle" fill="#24292f">pod</text>
+  <rect x="586" y="412" width="60" height="44" rx="6" fill="#dbe9ff" stroke="#2f6feb"/>
+  <text x="616" y="438" font-size="11" text-anchor="middle" fill="#24292f">pod</text>
+  <rect x="656" y="412" width="60" height="44" rx="6" fill="#dbe9ff" stroke="#2f6feb" stroke-dasharray="4,3"/>
+  <text x="686" y="438" font-size="11" text-anchor="middle" fill="#57606a">pod…</text>
+  <text x="615" y="482" font-size="11" text-anchor="middle" fill="#57606a">réplicas: 2 a 5 (autoscaling)</text>
+  <text x="615" y="502" font-size="11" text-anchor="middle" fill="#57606a">probes /up • requests/limits</text>
+
+  <rect x="780" y="370" width="170" height="120" rx="8" fill="#ffffff" stroke="#2f6feb"/>
+  <text x="865" y="394" font-size="12" font-weight="bold" text-anchor="middle" fill="#24292f">HPA</text>
+  <text x="865" y="416" font-size="11" text-anchor="middle" fill="#57606a">min 2 / max 5</text>
+  <text x="865" y="436" font-size="11" text-anchor="middle" fill="#57606a">CPU alvo 70%</text>
+  <text x="865" y="456" font-size="11" text-anchor="middle" fill="#57606a">Memória alvo 80%</text>
+
+  <rect x="300" y="490" width="150" height="90" rx="8" fill="#ffffff" stroke="#2f6feb"/>
+  <text x="375" y="516" font-size="12" font-weight="bold" text-anchor="middle" fill="#24292f">ConfigMap</text>
+  <text x="375" y="536" font-size="12" font-weight="bold" text-anchor="middle" fill="#24292f">+ Secrets</text>
+  <text x="375" y="558" font-size="10" text-anchor="middle" fill="#57606a">env, JWT, senha do banco</text>
+
+  <rect x="500" y="600" width="210" height="150" rx="8" fill="#ffffff" stroke="#1a7f37"/>
+  <text x="605" y="626" font-size="12" font-weight="bold" text-anchor="middle" fill="#24292f">StatefulSet postgres</text>
+  <text x="605" y="646" font-size="11" text-anchor="middle" fill="#57606a">postgres:16-alpine</text>
+  <text x="605" y="666" font-size="11" text-anchor="middle" fill="#57606a">Service db (5432)</text>
+  <rect x="530" y="686" width="150" height="44" rx="6" fill="#f0fff4" stroke="#57ab5a"/>
+  <text x="605" y="712" font-size="11" text-anchor="middle" fill="#24292f">PVC 1Gi (dados)</text>
+
+  <rect x="760" y="600" width="190" height="150" rx="8" fill="#ffffff" stroke="#a475f9"/>
+  <text x="855" y="626" font-size="12" font-weight="bold" text-anchor="middle" fill="#24292f">Mailpit</text>
+  <text x="855" y="648" font-size="11" text-anchor="middle" fill="#57606a">SMTP interno :1025</text>
+  <text x="855" y="668" font-size="11" text-anchor="middle" fill="#57606a">UI web :8025</text>
+  <text x="855" y="688" font-size="11" text-anchor="middle" fill="#57606a">NodePort 30025</text>
+  <text x="855" y="716" font-size="10" text-anchor="middle" fill="#57606a">(e-mails de status da OS)</text>
+
+  <!-- arrows inside cluster -->
+  <line x1="450" y1="410" x2="498" y2="410" stroke="#2f6feb" marker-end="url(#arrowBlue)"/>
+  <line x1="778" y1="430" x2="732" y2="430" stroke="#2f6feb" stroke-dasharray="4,3" marker-end="url(#arrowBlue)"/>
+  <text x="757" y="420" font-size="10" text-anchor="middle" fill="#57606a">escala</text>
+  <line x1="1000" y1="384" x2="952" y2="410" stroke="#8c959f" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <line x1="450" y1="530" x2="530" y2="500" stroke="#2f6feb" stroke-dasharray="4,3" marker-end="url(#arrowBlue)"/>
+  <text x="470" y="548" font-size="10" fill="#57606a">variáveis de ambiente</text>
+  <line x1="590" y1="526" x2="590" y2="598" stroke="#1a7f37" marker-end="url(#arrow)"/>
+  <text x="600" y="566" font-size="10" fill="#57606a">SQL</text>
+  <line x1="700" y1="526" x2="830" y2="598" stroke="#a475f9" marker-end="url(#arrow)"/>
+  <text x="790" y="556" font-size="10" fill="#57606a">SMTP</text>
+
+  <!-- Users -->
+  <rect x="40" y="560" width="180" height="70" rx="8" fill="#ffffff" stroke="#8c959f"/>
+  <text x="130" y="586" font-size="12" font-weight="bold" text-anchor="middle" fill="#24292f">Atendente / Cliente</text>
+  <text x="130" y="608" font-size="11" text-anchor="middle" fill="#57606a">REST + Swagger UI</text>
+  <line x1="220" y1="590" x2="298" y2="452" stroke="#2f6feb" marker-end="url(#arrowBlue)"/>
+  <text x="216" y="512" font-size="10" fill="#2f6feb">localhost:8080</text>
+
+  <rect x="40" y="680" width="180" height="70" rx="8" fill="#ffffff" stroke="#8c959f"/>
+  <text x="130" y="706" font-size="12" font-weight="bold" text-anchor="middle" fill="#24292f">Navegador</text>
+  <text x="130" y="728" font-size="11" text-anchor="middle" fill="#57606a">caixa de entrada Mailpit</text>
+  <polyline points="220,712 600,785 848,754" fill="none" stroke="#a475f9" marker-end="url(#arrow)"/>
+  <text x="330" y="740" font-size="10" fill="#a475f9">localhost:8026</text>
+
+  <text x="40" y="850" font-size="11" fill="#57606a">Componentes da aplicação em azul • Infraestrutura provisionada via Terraform em verde • Fluxo de deploy (CI/CD) em laranja • E-mail em roxo</text>
+</svg>

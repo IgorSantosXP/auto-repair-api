@@ -460,6 +460,9 @@ paths:
       - Service Orders
       security:
       - bearerAuth: []
+      description: 'Ordenação padrão: Em Execução > Aguardando Aprovação > Diagnóstico
+        > Recebida, mais antigas primeiro. Ordens finalizadas e entregues são excluídas
+        da listagem (exclusão lógica); use o filtro de status para consultá-las.'
       parameters:
       - name: page
         in: query
@@ -529,15 +532,60 @@ paths:
           application/json:
             schema:
               type: object
+              description: Informe customer_id/vehicle_id de registros existentes
+                OU os objetos customer/vehicle com os dados completos (busca por documento/placa;
+                cria se não existir).
               properties:
                 customer_id:
                   type: integer
-                  description: ID do cliente
+                  description: ID do cliente já cadastrado (alternativa ao objeto
+                    customer)
                   example: 1
                 vehicle_id:
                   type: integer
-                  description: ID do veículo
+                  description: ID do veículo já cadastrado (alternativa ao objeto
+                    vehicle)
                   example: 1
+                customer:
+                  type: object
+                  description: Dados do cliente — reutiliza cadastro existente pelo
+                    documento ou cria um novo
+                  properties:
+                    kind:
+                      type: string
+                      enum:
+                      - individual
+                      - company
+                      example: individual
+                    document:
+                      type: string
+                      example: 529.982.247-25
+                    name:
+                      type: string
+                      example: Maria Silva
+                    email:
+                      type: string
+                      example: maria@example.com
+                    phone:
+                      type: string
+                      example: 11 99999-0000
+                vehicle:
+                  type: object
+                  description: Dados do veículo — reutiliza cadastro existente pela
+                    placa ou cria um novo
+                  properties:
+                    license_plate:
+                      type: string
+                      example: ABC1D23
+                    brand:
+                      type: string
+                      example: Fiat
+                    model:
+                      type: string
+                      example: Uno
+                    year:
+                      type: integer
+                      example: 2018
                 diagnosis_notes:
                   type: string
                   description: Observações do diagnóstico inicial (opcional)
@@ -562,8 +610,6 @@ paths:
                         description: Quantidade
                         example: 1
               required:
-              - customer_id
-              - vehicle_id
               - items
               example:
                 customer_id: 1
@@ -934,5 +980,5 @@ components:
       bearerFormat: JWT
   schemas: {}
 servers:
-- url: http://localhost:3000
-  description: Development
+- url: "/"
+  description: Current host

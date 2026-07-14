@@ -18,6 +18,10 @@ RSpec.describe "Service Orders", type: :request do
       tags "Service Orders"
       security [bearerAuth: []]
       produces "application/json"
+      description [
+        "Ordenação padrão: Em Execução > Aguardando Aprovação > Diagnóstico > Recebida, mais antigas primeiro.",
+        "Ordens finalizadas e entregues são excluídas da listagem (exclusão lógica); use o filtro de status para consultá-las."
+      ].join(" ")
       parameter name: :page,        in: :query, type: :integer, required: false, example: 1
       parameter name: :per_page,    in: :query, type: :integer, required: false, example: 20
       parameter name: :status,      in: :query, type: :string,  required: false,
@@ -30,10 +34,15 @@ RSpec.describe "Service Orders", type: :request do
 
       response "200", "list returned" do
         let(:Authorization) { "Bearer #{token}" }
-        before { create(:service_order, customer: customer, vehicle: vehicle) }
+        before do
+          create(:service_order, customer: customer, vehicle: vehicle, status: "received")
+          create(:service_order, customer: customer, vehicle: vehicle, status: "in_execution")
+          create(:service_order, customer: customer, vehicle: vehicle, status: "delivered")
+        end
         run_test! do |response|
           data = JSON.parse(response.body)
-          expect(data.length).to eq(1)
+          expect(data.length).to eq(2)
+          expect(data.map { |order| order["status"] }).to eq(%w[in_execution received])
         end
       end
 
@@ -50,16 +59,38 @@ RSpec.describe "Service Orders", type: :request do
       produces "application/json"
       parameter name: :body, in: :body, schema: {
         type: :object,
+        description: "Informe customer_id/vehicle_id de registros existentes OU os objetos customer/vehicle com os dados completos (busca por documento/placa; cria se não existir).",
         properties: {
           customer_id: {
             type: :integer,
-            description: "ID do cliente",
+            description: "ID do cliente já cadastrado (alternativa ao objeto customer)",
             example: 1
           },
           vehicle_id: {
             type: :integer,
-            description: "ID do veículo",
+            description: "ID do veículo já cadastrado (alternativa ao objeto vehicle)",
             example: 1
+          },
+          customer: {
+            type: :object,
+            description: "Dados do cliente — reutiliza cadastro existente pelo documento ou cria um novo",
+            properties: {
+              kind:     { type: :string, enum: %w[individual company], example: "individual" },
+              document: { type: :string, example: "529.982.247-25" },
+              name:     { type: :string, example: "Maria Silva" },
+              email:    { type: :string, example: "maria@example.com" },
+              phone:    { type: :string, example: "11 99999-0000" }
+            }
+          },
+          vehicle: {
+            type: :object,
+            description: "Dados do veículo — reutiliza cadastro existente pela placa ou cria um novo",
+            properties: {
+              license_plate: { type: :string, example: "ABC1D23" },
+              brand:         { type: :string, example: "Fiat" },
+              model:         { type: :string, example: "Uno" },
+              year:          { type: :integer, example: 2018 }
+            }
           },
           diagnosis_notes: {
             type: :string,
@@ -91,7 +122,7 @@ RSpec.describe "Service Orders", type: :request do
             }
           }
         },
-        required: %w[customer_id vehicle_id items],
+        required: %w[items],
         example: {
           customer_id: 1,
           vehicle_id: 1,
@@ -116,6 +147,24 @@ RSpec.describe "Service Orders", type: :request do
           data = JSON.parse(response.body)
           expect(data["status"]).to eq("received")
           expect(data["total_cents"]).to eq(5000)
+        end
+      end
+
+      response "201", "order created with customer and vehicle data", document: false do
+        let(:Authorization) { "Bearer #{token}" }
+        let(:body) do
+          {
+            customer: { kind: "individual", document: "529.982.247-25", name: "Maria Silva",
+                        email: "maria@example.com" },
+            vehicle:  { license_plate: "XYZ9A88", brand: "Fiat", model: "Uno", year: 2018 },
+            items:    [{ service_id: service.id, quantity: 1 }]
+          }
+        end
+        run_test! do |response|
+          data = JSON.parse(response.body)
+          expect(data["uuid"]).to be_present
+          expect(data["customer_id"]).to be_present
+          expect(data["vehicle_id"]).to be_present
         end
       end
 

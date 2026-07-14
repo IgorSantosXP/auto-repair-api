@@ -1,0 +1,20 @@
+<h2>Hello, <%= @order.customer.name %>!</h2>
+
+<p>
+  Your service order <strong><%= @order.uuid %></strong>
+  for the vehicle <strong><%= @order.vehicle.brand %> <%= @order.vehicle.model %> (<%= @order.vehicle.license_plate %>)</strong>
+  has a new status: <strong><%= @status.humanize %></strong>.
+</p>
+
+<% if @approval_link.present? %>
+  <p>
+    Your budget is ready for review: <strong><%= ActiveSupport::NumberHelper.number_to_currency(@order.total_cents / 100.0, unit: "R$ ") %></strong>
+  </p>
+  <p>
+    The links below are valid for 7 days:<br>
+    <a href="<%= @approval_link %>">Approve the budget</a><br>
+    <a href="<%= @rejection_link %>">Reject the budget</a>
+  </p>
+<% end %>
+
+<p>Thank you for choosing our repair shop!</p>

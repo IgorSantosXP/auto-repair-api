@@ -71,6 +71,20 @@ RSpec.describe "ApproveOrder / RejectOrder", type: :model do
       expect(result).to be_failure
       expect(result.errors.first).to match(/not awaiting/)
     end
+
+    it "notifies the customer by email on approval" do
+      data = create_order_awaiting_approval
+
+      expect { ServiceOrders::UseCases::ApproveOrder.call(uuid: data[:order].uuid, token: data[:token]) }
+        .to have_enqueued_mail(ServiceOrderMailer, :status_changed)
+    end
+
+    it "does not notify when approval fails" do
+      data = create_order_awaiting_approval
+
+      expect { ServiceOrders::UseCases::ApproveOrder.call(uuid: data[:order].uuid, token: "wrong_token") }
+        .not_to have_enqueued_mail(ServiceOrderMailer, :status_changed)
+    end
   end
 
   describe "RejectOrder" do

@@ -23,7 +23,7 @@ RSpec.configure do |config|
         schemas: {}
       },
       servers: [
-        { url: "http://localhost:3000", description: "Development" }
+        { url: "/", description: "Current host" }
       ]
     }
   }

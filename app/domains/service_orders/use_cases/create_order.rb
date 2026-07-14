@@ -3,9 +3,12 @@ module ServiceOrders
     class CreateOrder
       def self.call(params, performed_by:)
         ActiveRecord::Base.transaction do
+          customer = resolve_customer(params)
+          vehicle  = resolve_vehicle(params, customer)
+
           order = Entities::ServiceOrder.new(
-            customer_id:     params[:customer_id],
-            vehicle_id:      params[:vehicle_id],
+            customer_id:     customer&.id,
+            vehicle_id:      vehicle&.id,
             status:          "received",
             diagnosis_notes: params[:diagnosis_notes]
           )
@@ -34,6 +37,49 @@ module ServiceOrders
         end
       rescue ActiveRecord::RecordInvalid => e
         Result.failure(errors: e.record.errors.full_messages)
+      rescue Errors::VehicleOwnershipConflict => e
+        Result.failure(errors: [e.message])
+      end
+
+      private_class_method def self.resolve_customer(params)
+        return Registries::Entities::Customer.find_by(id: params[:customer_id]) if params[:customer_id].present?
+
+        attrs = params[:customer]
+        return nil if attrs.blank?
+
+        document = normalize_document(attrs)
+        Registries::Entities::Customer.find_by(document: document) ||
+          Registries::Entities::Customer.create!(attrs.to_h.merge(document: document))
+      end
+
+      private_class_method def self.resolve_vehicle(params, customer)
+        return Registries::Entities::Vehicle.find_by(id: params[:vehicle_id]) if params[:vehicle_id].present?
+
+        attrs = params[:vehicle]
+        return nil if attrs.blank? || customer.nil?
+
+        plate    = Registries::ValueObjects::LicensePlate.new(attrs[:license_plate]).normalized
+        existing = Registries::Entities::Vehicle.find_by(license_plate: plate)
+
+        if existing
+          unless existing.customer_id == customer.id
+            raise Errors::VehicleOwnershipConflict, "License plate #{plate} is registered to another customer"
+          end
+          existing
+        else
+          Registries::Entities::Vehicle.create!(attrs.to_h.merge(customer_id: customer.id))
+        end
+      end
+
+      private_class_method def self.normalize_document(attrs)
+        document = attrs[:document]
+        return document if document.blank?
+
+        if attrs[:kind] == "company"
+          Registries::ValueObjects::Cnpj.new(document).normalized
+        else
+          Registries::ValueObjects::Cpf.new(document).normalized
+        end
       end
 
       private_class_method def self.build_items(order, items_params)

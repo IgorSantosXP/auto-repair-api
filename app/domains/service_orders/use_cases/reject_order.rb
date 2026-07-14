@@ -2,6 +2,12 @@ module ServiceOrders
   module UseCases
     class RejectOrder
       def self.call(uuid:, token:)
+        result = reject(uuid: uuid, token: token)
+        Services::CustomerNotifier.status_changed(result.payload) if result.success?
+        result
+      end
+
+      private_class_method def self.reject(uuid:, token:)
         ActiveRecord::Base.transaction do
           order = Entities::ServiceOrder.find_by!(uuid: uuid)
 

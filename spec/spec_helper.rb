@@ -1,3 +1,6 @@
+# bootsnap 1.23 crashes if loaded while SimpleCov is active (Ruby >= 3.4.10)
+ENV["DISABLE_BOOTSNAP"] = "1"
+
 require "simplecov"
 
 SimpleCov.start "rails" do
