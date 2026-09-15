@@ -25,7 +25,7 @@ Rails.application.routes.draw do
       end
 
       namespace :customer do
-        resources :service_orders, param: :uuid, only: [:show] do
+        resources :service_orders, param: :uuid, only: [:index, :show] do
           member do
             post :approve
             get  :approve

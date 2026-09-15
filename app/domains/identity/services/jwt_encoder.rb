@@ -4,14 +4,40 @@ module Identity
   module Services
     class JwtEncoder
       ALGORITHM = "HS256"
-      EXPIRY    = 24.hours
 
-      def self.encode(payload)
-        JWT.encode(payload.merge(exp: EXPIRY.from_now.to_i), secret, ALGORITHM)
+      ADMIN_AUDIENCE    = "admin".freeze
+      CUSTOMER_AUDIENCE = "customer".freeze
+
+      ADMIN_ISSUER    = "auto-repair-api".freeze
+      CUSTOMER_ISSUER = "auto-repair-auth".freeze
+
+      EXPIRY = 24.hours
+
+      ISSUERS = {
+        ADMIN_AUDIENCE    => ADMIN_ISSUER,
+        CUSTOMER_AUDIENCE => CUSTOMER_ISSUER
+      }.freeze
+
+      def self.encode(payload, audience: ADMIN_AUDIENCE)
+        JWT.encode(
+          payload.merge(
+            "aud" => audience,
+            "iss" => ISSUERS.fetch(audience),
+            "exp" => EXPIRY.from_now.to_i
+          ),
+          secret,
+          ALGORITHM
+        )
       end
 
-      def self.decode(token)
-        JWT.decode(token, secret, true, { algorithm: ALGORITHM }).first
+      def self.decode(token, audience: ADMIN_AUDIENCE)
+        JWT.decode(token, secret, true, {
+          algorithm:  ALGORITHM,
+          verify_aud: true,
+          aud:        audience,
+          verify_iss: true,
+          iss:        ISSUERS.fetch(audience)
+        }).first
       end
 
       def self.secret

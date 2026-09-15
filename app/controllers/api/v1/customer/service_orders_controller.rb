@@ -2,10 +2,21 @@ module Api
   module V1
     module Customer
       class ServiceOrdersController < BaseController
+        def index
+          orders = ServiceOrders::Entities::ServiceOrder
+                     .includes(:vehicle, :items, :status_changes)
+                     .where(customer_id: current_customer.id)
+                     .order(created_at: :desc)
+
+          render_success(orders.map { |order| public_view(order) })
+        end
+
         def show
           order = ServiceOrders::Entities::ServiceOrder
                     .includes(:customer, :vehicle, :items, :status_changes)
                     .find_by!(uuid: params[:uuid])
+
+          return if authorize_order!(order)
 
           render_success(public_view(order))
         rescue ActiveRecord::RecordNotFound
@@ -40,11 +51,22 @@ module Api
 
         private
 
+        def authenticate_customer!
+          return if signed_link_request?
+
+          super
+        end
+
+        def signed_link_request?
+          params[:token].present? && %w[approve reject].include?(action_name)
+        end
+
         def public_view(order)
           {
             uuid:        order.uuid,
             status:      order.status,
             total_cents: order.total_cents,
+            created_at:  order.created_at,
             vehicle: {
               license_plate: order.vehicle.license_plate,
               brand:         order.vehicle.brand,
