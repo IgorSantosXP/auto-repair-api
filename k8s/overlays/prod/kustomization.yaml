@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: auto-repair-prod
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+configMapGenerator:
+  - name: api-config
+    literals:
+      - RAILS_ENV=production
+      - RAILS_LOG_TO_STDOUT=true
+      - RAILS_SERVE_STATIC_FILES=true
+      - DD_ENV=production
+      - DD_SERVICE=auto-repair-api
+      - SMTP_HOST=mailpit.auto-repair-prod.svc.cluster.local
+      - SMTP_PORT=1025
+
+patches:
+  - path: service-nodeport.yaml
+  - path: replicas.yaml
+
+images:
+  - name: auto-repair-api
+    newName: 814623398856.dkr.ecr.us-east-1.amazonaws.com/auto-repair-api
+    newTag: latest

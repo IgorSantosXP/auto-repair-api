@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: api
-  namespace: auto-repair
   labels:
     app: api
 spec:
@@ -14,13 +13,27 @@ spec:
     metadata:
       labels:
         app: api
+        tags.datadoghq.com/service: auto-repair-api
+      annotations:
+        ad.datadoghq.com/api.logs: '[{"source":"ruby","service":"auto-repair-api"}]'
     spec:
       containers:
         - name: api
-          image: ghcr.io/igorsantosxp/auto-repair-api:latest
-          imagePullPolicy: IfNotPresent
+          image: auto-repair-api
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
+          env:
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DD_SERVICE
+              value: auto-repair-api
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           envFrom:
             - configMapRef:
                 name: api-config
