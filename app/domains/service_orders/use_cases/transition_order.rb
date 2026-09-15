@@ -19,6 +19,7 @@ module ServiceOrders
         ActiveRecord::Base.transaction do
           order = Entities::ServiceOrder.find(order_id)
           next_status = Services::StateMachine.transition(order.status, event)
+          entered_current_status_at = current_status_started_at(order)
 
           if next_status.nil?
             valid = Services::StateMachine.valid_events_for(order.status)
@@ -59,6 +60,13 @@ module ServiceOrders
             performed_by:         "admin"
           )
 
+          Telemetry.status_transition(
+            from:             order.status_before_last_save,
+            to:               next_status,
+            event:            event,
+            duration_seconds: Time.current - entered_current_status_at
+          )
+
           payload = { order: order.reload }
           if event == "send_for_approval"
             payload[:approval_link]  = build_customer_link(order, "approve", token_data[:plain])
@@ -76,6 +84,12 @@ module ServiceOrders
         Result.failure(errors: ["Service order not found"])
       rescue ActiveRecord::RecordInvalid => e
         Result.failure(errors: e.record.errors.full_messages)
+      end
+
+      private_class_method def self.current_status_started_at(order)
+        Entities::ServiceOrderStatusChange
+          .where(service_order_id: order.id)
+          .maximum(:created_at) || order.created_at
       end
 
       private_class_method def self.build_customer_link(order, action, plain_token)

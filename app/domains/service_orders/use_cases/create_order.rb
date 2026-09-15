@@ -33,6 +33,8 @@ module ServiceOrders
             performed_by:         "admin"
           )
 
+          Telemetry.order_created(order)
+
           Result.success(payload: order.reload)
         end
       rescue ActiveRecord::RecordInvalid => e

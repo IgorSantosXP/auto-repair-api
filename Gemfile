@@ -22,6 +22,10 @@ gem "rack-attack"
 gem "rswag-api"
 gem "rswag-ui"
 
+gem "datadog", "~> 2.3"
+gem "dogstatsd-ruby", "~> 5.6"
+gem "lograge"
+
 group :development, :test do
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
   gem "bundler-audit", require: false

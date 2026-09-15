@@ -1,6 +1,12 @@
 class ApplicationController < ActionController::API
   private
 
+  def append_info_to_payload(payload)
+    super
+    payload[:request_id] = request.request_id
+    payload[:remote_ip]  = request.remote_ip
+  end
+
   def render_success(data, status: :ok)
     render json: data, status: status
   end
