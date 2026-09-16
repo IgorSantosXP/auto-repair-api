@@ -16,13 +16,15 @@ default: &default
   adapter: postgresql
   encoding: unicode
   max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-  host: db
-  username: postgres
-  password: postgres
+
+local: &local
+  host: <%= ENV.fetch("DB_HOST", "db") %>
+  username: <%= ENV.fetch("POSTGRES_USER", "postgres") %>
+  password: <%= ENV.fetch("POSTGRES_PASSWORD", "postgres") %>
 
 
 development:
-  <<: *default
+  <<: [*default, *local]
   database: auto_repair_api_development
 
   # The specified database role being used to connect to PostgreSQL.
@@ -56,7 +58,7 @@ development:
 # re-generated from your development database when you run "rake".
 # Do not set this db to the same as development or production.
 test:
-  <<: *default
+  <<: [*default, *local]
   database: auto_repair_api_test
 
 # As with config/credentials.yml, you never want to store sensitive information,
@@ -86,21 +88,18 @@ test:
 # for a full overview on how database connection configuration can be specified.
 #
 production:
-  primary: &primary_production
+  primary:
     <<: *default
-    host: <%= ENV.fetch("DB_HOST", "db") %>
-    database: auto_repair_api_production
-    username: <%= ENV.fetch("POSTGRES_USER", "postgres") %>
-    password: <%= ENV["POSTGRES_PASSWORD"] %>
+    url: <%= ENV["DATABASE_URL"] %>
   cache:
-    <<: *primary_production
-    database: auto_repair_api_production_cache
+    <<: *default
+    url: <%= ENV["CACHE_DATABASE_URL"] %>
     migrations_paths: db/cache_migrate
   queue:
-    <<: *primary_production
-    database: auto_repair_api_production_queue
+    <<: *default
+    url: <%= ENV["QUEUE_DATABASE_URL"] %>
     migrations_paths: db/queue_migrate
   cable:
-    <<: *primary_production
-    database: auto_repair_api_production_cable
+    <<: *default
+    url: <%= ENV["CABLE_DATABASE_URL"] %>
     migrations_paths: db/cable_migrate
