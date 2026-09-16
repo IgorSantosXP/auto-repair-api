@@ -134,8 +134,13 @@ jobs:
           DB_PASS=$(echo "$SECRET" | jq -r .password)
           JWT=$(echo "$SECRET" | jq -r .jwt_secret)
 
+          BASE="postgres://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT"
+
           kubectl -n "$NAMESPACE" create secret generic api-secrets \
-            --from-literal=DATABASE_URL="postgres://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/$DATABASE?sslmode=require" \
+            --from-literal=DATABASE_URL="$BASE/$DATABASE?sslmode=require" \
+            --from-literal=CACHE_DATABASE_URL="$BASE/${DATABASE}_cache?sslmode=require" \
+            --from-literal=QUEUE_DATABASE_URL="$BASE/${DATABASE}_queue?sslmode=require" \
+            --from-literal=CABLE_DATABASE_URL="$BASE/${DATABASE}_cable?sslmode=require" \
             --from-literal=JWT_SECRET="$JWT" \
             --from-literal=RAILS_MASTER_KEY="${{ secrets.RAILS_MASTER_KEY }}" \
             --from-literal=SECRET_KEY_BASE="$JWT" \
