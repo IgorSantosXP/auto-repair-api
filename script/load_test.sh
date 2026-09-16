@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${1:-http://localhost:8080}"
+BASE_URL="${1:?informe a URL base, ex.: https://abc123.execute-api.us-east-1.amazonaws.com}"
 DURATION="${2:-300}"
 CONCURRENCY="${3:-30}"
 
@@ -22,7 +22,7 @@ fi
 
 echo "Authenticated. Starting load..."
 echo "Watch the autoscaler in another terminal:"
-echo "  kubectl -n auto-repair get hpa,pods -w"
+echo "  kubectl -n auto-repair-prod get hpa,pods -w"
 echo
 
 END=$(( $(date +%s) + DURATION ))
