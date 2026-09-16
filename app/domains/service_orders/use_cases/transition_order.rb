@@ -23,6 +23,7 @@ module ServiceOrders
 
           if next_status.nil?
             valid = Services::StateMachine.valid_events_for(order.status)
+            Telemetry.order_processing_failed(stage: "transition", reason: "invalid_event")
             return Result.failure(errors: [
               "Cannot '#{event}' from '#{order.status}'. Valid events: #{valid.join(', ')}"
             ])
@@ -43,7 +44,11 @@ module ServiceOrders
               service_order_id: order.id,
               performed_by:     performed_by
             )
-            return Result.failure(errors: reservation.errors) if reservation.failure?
+            if reservation.failure?
+              Telemetry.order_processing_failed(stage: "stock_reservation", reason: "insufficient_stock")
+              Telemetry.integration_error(integration: "inventory", reason: "insufficient_stock")
+              return Result.failure(errors: reservation.errors)
+            end
 
             order.items.update_all(executed: true)
           end
@@ -81,8 +86,10 @@ module ServiceOrders
           Result.success(payload: payload)
         end
       rescue ActiveRecord::RecordNotFound
+        Telemetry.order_processing_failed(stage: "transition", reason: "not_found")
         Result.failure(errors: ["Service order not found"])
       rescue ActiveRecord::RecordInvalid => e
+        Telemetry.order_processing_failed(stage: "transition", reason: "invalid_record")
         Result.failure(errors: e.record.errors.full_messages)
       end
 

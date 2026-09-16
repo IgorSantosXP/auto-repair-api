@@ -14,13 +14,17 @@ module ServiceOrders
           )
 
           unless order.valid?
+            Telemetry.order_processing_failed(stage: "creation", reason: "invalid_order")
             return Result.failure(errors: order.errors.full_messages)
           end
 
           order.save!
 
           items = build_items(order, Array(params[:items]))
-          return Result.failure(errors: items[:errors]) if items[:errors].any?
+          if items[:errors].any?
+            Telemetry.order_processing_failed(stage: "creation", reason: "invalid_items")
+            return Result.failure(errors: items[:errors])
+          end
 
           order.update!(total_cents: Services::BudgetCalculator.calculate(order.items.reload))
 
@@ -38,8 +42,10 @@ module ServiceOrders
           Result.success(payload: order.reload)
         end
       rescue ActiveRecord::RecordInvalid => e
+        Telemetry.order_processing_failed(stage: "creation", reason: "invalid_record")
         Result.failure(errors: e.record.errors.full_messages)
       rescue Errors::VehicleOwnershipConflict => e
+        Telemetry.order_processing_failed(stage: "creation", reason: "vehicle_ownership_conflict")
         Result.failure(errors: [e.message])
       end
 

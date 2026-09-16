@@ -34,6 +34,10 @@ module Telemetry
     distribution("service_order.status_duration", duration_seconds, tags: ["status:#{from}"])
   end
 
+  def order_processing_failed(stage:, reason:)
+    increment("service_order.failed", tags: ["stage:#{stage}", "reason:#{reason}"])
+  end
+
   def integration_error(integration:, reason:)
     increment("integration.error", tags: ["integration:#{integration}", "reason:#{reason}"])
   end
