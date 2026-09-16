@@ -15,6 +15,7 @@ gem "bootsnap", require: false
 gem "kamal", require: false
 gem "thruster", require: false
 
+gem "json", "~> 2.21"
 gem "jwt"
 gem "bcrypt", "~> 3.1.7"
 gem "rack-attack"
