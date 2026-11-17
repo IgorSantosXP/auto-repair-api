@@ -1,6 +1,10 @@
 # Auto Repair API
 
-Backend Rails 8.1 API-only para gerenciamento de uma oficina mecânica. Cobre ordens de serviço, cadastro de clientes/veículos, controle de estoque, fluxo de aprovação de orçamentos e notificação de clientes por e-mail.
+[![CI/CD](https://github.com/IgorSantosXP/auto-repair-api/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/IgorSantosXP/auto-repair-api/actions/workflows/ci.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=IgorSantosXP_auto-repair-api&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=IgorSantosXP_auto-repair-api)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=IgorSantosXP_auto-repair-api&metric=coverage)](https://sonarcloud.io/component_measures?id=IgorSantosXP_auto-repair-api&metric=coverage)
+
+**OS Service** do sistema de gestão de oficina mecânica (Rails 8.1 API-only). Cobre abertura e acompanhamento das ordens de serviço, cadastro de clientes e veículos, notificação por e-mail e a **orquestração da saga** que integra os microsserviços de Billing e Execution.
 
 ## Fase 4: microsserviços e saga
 
