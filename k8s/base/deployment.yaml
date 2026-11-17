@@ -17,6 +17,7 @@ spec:
       annotations:
         ad.datadoghq.com/api.logs: '[{"source":"ruby","service":"auto-repair-api"}]'
     spec:
+      serviceAccountName: os-service
       containers:
         - name: api
           image: auto-repair-api

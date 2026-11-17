@@ -23,7 +23,7 @@ module Api
 
       def show
         order = ServiceOrders::Entities::ServiceOrder
-                  .includes(:customer, :vehicle, :items, :status_changes)
+                  .includes(:customer, :vehicle, :items, :status_changes, :saga)
                   .find(params[:id])
         render_success(order)
       rescue ActiveRecord::RecordNotFound
@@ -31,7 +31,11 @@ module Api
       end
 
       def create
-        result = ServiceOrders::UseCases::CreateOrder.call(order_params, performed_by: current_user)
+        result = ServiceOrders::UseCases::CreateOrder.call(
+          order_params,
+          performed_by:  current_user,
+          parts_catalog: ServiceOrders::Gateways::PartsCatalog.new(auth_token: bearer_token)
+        )
         render_result(result, on_success: :created)
       end
 
@@ -42,12 +46,8 @@ module Api
         render_result(result)
       end
 
-      def transitions
-        result = ServiceOrders::UseCases::TransitionOrder.call(
-          params[:id],
-          event:        params[:event],
-          performed_by: current_user
-        )
+      def deliver
+        result = ServiceOrders::UseCases::DeliverOrder.call(params[:id], performed_by: current_user)
 
         if result.success?
           render_success(result.payload)
@@ -56,9 +56,18 @@ module Api
             code:    "transition_error",
             message: result.errors.first,
             details: result.errors,
-            status:  :unprocessable_entity
+            status:  result.status || :unprocessable_entity
           )
         end
+      end
+
+      def saga
+        order = ServiceOrders::Entities::ServiceOrder.includes(saga: :steps).find(params[:id])
+        return render_error(code: "not_found", message: "Saga not found", status: :not_found) if order.saga.nil?
+
+        render_success(order.saga)
+      rescue ActiveRecord::RecordNotFound
+        render_error(code: "not_found", message: "Service order not found", status: :not_found)
       end
 
       private
@@ -73,10 +82,7 @@ module Api
       end
 
       def order_update_params
-        params.permit(
-          :diagnosis_notes,
-          items: [:service_id, :part_id, :quantity, :unit_price_cents]
-        )
+        params.permit(:diagnosis_notes, items: [:service_id, :part_id, :quantity])
       end
     end
   end

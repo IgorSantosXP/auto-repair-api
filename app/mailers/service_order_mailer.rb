@@ -1,9 +1,7 @@
 class ServiceOrderMailer < ApplicationMailer
   def status_changed
-    @order          = params[:order]
-    @status         = params[:status] || @order.status
-    @approval_link  = params[:approval_link]
-    @rejection_link = params[:rejection_link]
+    @order  = params[:order]
+    @status = params[:status] || @order.status
 
     mail(
       to:      @order.customer.email,

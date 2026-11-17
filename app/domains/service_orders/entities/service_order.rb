@@ -10,6 +10,8 @@ module ServiceOrders
                foreign_key: :service_order_id, dependent: :destroy
       has_many :status_changes, class_name: "ServiceOrders::Entities::ServiceOrderStatusChange",
                foreign_key: :service_order_id, dependent: :destroy
+      has_one  :saga,           class_name: "ServiceOrders::Entities::Saga",
+               foreign_key: :service_order_id, dependent: :destroy
 
       validates :uuid,        presence: true, uniqueness: true
       validates :customer_id, presence: true
@@ -19,10 +21,12 @@ module ServiceOrders
       before_validation :assign_uuid, on: :create
 
       def as_json(options = {})
-        super(options.merge(
-          except: %i[approval_token_digest],
-          include: { items: { methods: [] } }
-        )).merge("available_events" => Services::StateMachine.valid_events_for(status))
+        super(options.merge(include: { items: { methods: [] } }))
+          .merge(
+            "available_events" => Services::StateMachine.admin_events_for(status),
+            "saga"             => saga && { "id" => saga.uuid, "state" => saga.state,
+                                            "payment_url" => saga.payment_url }
+          )
       end
 
       private

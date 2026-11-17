@@ -8,6 +8,7 @@ FactoryBot.define do
 
   factory :service_order_item, class: "ServiceOrders::Entities::ServiceOrderItem" do
     association :service_order
+    name             { "Item" }
     quantity         { 1 }
     unit_price_cents { 5000 }
     total_cents      { 5000 }
@@ -15,12 +16,17 @@ FactoryBot.define do
 
     trait :with_service do
       association :service
-      part { nil }
+      part_id { nil }
     end
 
     trait :with_part do
-      association :part
+      part_id { "oleo-5w30" }
       service { nil }
     end
+  end
+
+  factory :saga, class: "ServiceOrders::Entities::Saga" do
+    association :service_order
+    state { "budget_requested" }
   end
 end

@@ -1,11 +1,15 @@
 module ServiceOrders
   module Queries
     class ListOrdersQuery
-      STATUS_PRIORITY = %w[in_execution approved awaiting_approval in_diagnosis received].freeze
-      HIDDEN_STATUSES = %w[finished delivered].freeze
+      # Phase 2 rule: In execution > Awaiting approval > In diagnosis > Received,
+      # with the saga statuses slotted next to their closest phase 2 equivalent.
+      STATUS_PRIORITY = %w[
+        in_execution awaiting_approval awaiting_payment approved in_diagnosis received
+      ].freeze
+      HIDDEN_STATUSES = %w[finished delivered cancelled].freeze
 
       def self.call(status: nil, customer_id: nil, vehicle_id: nil, from: nil, to: nil)
-        scope = Entities::ServiceOrder.includes(:customer, :vehicle, :items)
+        scope = Entities::ServiceOrder.includes(:customer, :vehicle, :items, :saga)
 
         scope = filter_status(scope, status)
         scope = scope.where(customer_id: customer_id) if customer_id.present?

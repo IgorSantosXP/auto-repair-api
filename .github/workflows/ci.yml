@@ -2,6 +2,7 @@ name: CI/CD
 
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches: [main, homolog]
 
@@ -54,14 +55,62 @@ jobs:
         with:
           bundler-cache: true
 
-      - name: Run tests
+      - name: Prepare database
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432
+        run: bin/rails db:test:prepare
+
+      - name: Unit and request tests (RSpec, coverage >= 80%)
         env:
           RAILS_ENV: test
           DATABASE_URL: postgres://postgres:postgres@localhost:5432
           JWT_SECRET: ci_test_secret_do_not_use_in_production
+        run: bundle exec rspec --format progress
+
+      - name: BDD scenarios (Cucumber)
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432
+          JWT_SECRET: ci_test_secret_do_not_use_in_production
+        run: bundle exec cucumber --profile ci
+
+      - name: Coverage summary
         run: |
-          bin/rails db:test:prepare
-          bundle exec rspec --format progress
+          COVERED=$(jq '.result.line' coverage/.last_run.json)
+          echo "### Coverage: ${COVERED}%" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            coverage/
+            tmp/cucumber.html
+          include-hidden-files: true
+
+  quality:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-reports
+
+      - name: SonarQube Cloud analysis
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Quality gate
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   manifests:
     runs-on: ubuntu-latest
@@ -74,9 +123,22 @@ jobs:
           kubectl kustomize k8s/overlays/homolog > /dev/null
           echo "Both overlays build cleanly"
 
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Validate terraform
+        working-directory: terraform
+        run: |
+          terraform fmt -check
+          terraform init -backend=false -input=false
+          terraform validate
+
+  # Runs only while the AWS environment is up (repository variable
+  # DEPLOY_ENABLED=true); re-run anytime with "Run workflow".
   deploy:
-    needs: [security, test, manifests]
-    if: github.event_name == 'push'
+    needs: [security, test, quality, manifests]
+    if: github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
 
@@ -101,6 +163,16 @@ jobs:
         with:
           role-to-assume: ${{ env.AWS_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Provision messaging (SQS queue, SNS subscription, Pod Identity)
+        working-directory: terraform
+        run: |
+          terraform init -input=false
+          terraform apply -input=false -auto-approve
 
       - name: Log in to Amazon ECR
         id: ecr
@@ -160,6 +232,7 @@ jobs:
 
           kubectl -n "$NAMESPACE" wait --for=condition=complete job/db-migrate --timeout=300s
           kubectl -n "$NAMESPACE" rollout status deployment/api --timeout=300s
+          kubectl -n "$NAMESPACE" rollout status deployment/worker --timeout=300s
 
       - name: Smoke test
         if: steps.env.outputs.name == 'prod'

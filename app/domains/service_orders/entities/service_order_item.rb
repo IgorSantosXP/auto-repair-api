@@ -1,12 +1,15 @@
 module ServiceOrders
   module Entities
+    # `part_id` is the identifier of a part in the Execution Service catalog.
+    # Name and price are snapshotted when the order is opened, so the order
+    # never needs to read another service's database.
     class ServiceOrderItem < ApplicationRecord
       self.table_name = "service_order_items"
 
       belongs_to :service_order, class_name: "ServiceOrders::Entities::ServiceOrder"
-      belongs_to :service, class_name: "Registries::Entities::Service",   optional: true
-      belongs_to :part,    class_name: "Inventory::Entities::Part",    optional: true
+      belongs_to :service, class_name: "Registries::Entities::Service", optional: true
 
+      validates :name,             presence: true
       validates :quantity,         presence: true, numericality: { only_integer: true, greater_than: 0 }
       validates :unit_price_cents, presence: true, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
       validates :total_cents,      presence: true
@@ -15,8 +18,16 @@ module ServiceOrders
 
       before_validation :calculate_total
 
+      def kind
+        service_id.present? ? "service" : "part"
+      end
+
+      def reference_id
+        (service_id || part_id).to_s
+      end
+
       def item_name
-        service&.name || part&.name
+        name
       end
 
       private

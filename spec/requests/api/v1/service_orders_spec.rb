@@ -5,12 +5,10 @@ RSpec.describe "Service Orders", type: :request do
   let(:customer) { create(:customer) }
   let(:vehicle)  { create(:vehicle, customer: customer) }
   let(:service)  { create(:service, base_price_cents: 5000) }
-  let(:part)     { create(:part, unit_price_cents: 2000) }
   let(:token)    { Identity::Services::JwtEncoder.encode({ "sub" => admin.id }) }
 
   before do
     allow(Identity::Services::JwtEncoder).to receive(:secret).and_return("test_secret")
-    create(:stock_movement, part: part, performed_by_user: admin, movement_type: "inbound", quantity: 10)
   end
 
   path "/api/v1/service_orders" do
@@ -19,13 +17,13 @@ RSpec.describe "Service Orders", type: :request do
       security [bearerAuth: []]
       produces "application/json"
       description [
-        "Ordenação padrão: Em Execução > Aguardando Aprovação > Diagnóstico > Recebida, mais antigas primeiro.",
-        "Ordens finalizadas e entregues são excluídas da listagem (exclusão lógica); use o filtro de status para consultá-las."
+        "Ordenação padrão: Em Execução > Aguardando Aprovação > Aguardando Pagamento > Aprovada > Diagnóstico > Recebida, mais antigas primeiro.",
+        "Ordens finalizadas, entregues e canceladas são excluídas da listagem; use o filtro de status para consultá-las."
       ].join(" ")
       parameter name: :page,        in: :query, type: :integer, required: false, example: 1
       parameter name: :per_page,    in: :query, type: :integer, required: false, example: 20
       parameter name: :status,      in: :query, type: :string,  required: false,
-                description: "Filtrar por status: received | in_diagnosis | awaiting_approval | in_execution | finished | delivered",
+                description: "Filtrar por status: received | awaiting_approval | awaiting_payment | approved | in_diagnosis | in_execution | finished | delivered | cancelled",
                 example: "received"
       parameter name: :customer_id, in: :query, type: :integer, required: false, description: "Filtrar por ID do cliente"
       parameter name: :vehicle_id,  in: :query, type: :integer, required: false, description: "Filtrar por ID do veículo"
@@ -99,7 +97,7 @@ RSpec.describe "Service Orders", type: :request do
           },
           items: {
             type: :array,
-            description: "Lista de serviços e/ou peças da OS. Cada item deve ter exatamente um de service_id ou part_id.",
+            description: "Lista de serviços e/ou peças da OS (mínimo 1). Cada item deve ter exatamente um de service_id ou part_id. Peças são validadas no catálogo do Execution Service. Ao criar a OS a saga solicita o orçamento ao Billing Service.",
             items: {
               type: :object,
               properties: {
@@ -109,9 +107,9 @@ RSpec.describe "Service Orders", type: :request do
                   example: 1
                 },
                 part_id: {
-                  type: :integer,
-                  description: "ID da peça (use este ou service_id, nunca ambos)",
-                  example: 2
+                  type: :string,
+                  description: "ID da peça no Execution Service (use este ou service_id, nunca ambos)",
+                  example: "oleo-5w30"
                 },
                 quantity: {
                   type: :integer,
@@ -129,7 +127,7 @@ RSpec.describe "Service Orders", type: :request do
           diagnosis_notes: "Cliente relata barulho ao frear",
           items: [
             { service_id: 1, quantity: 1 },
-            { part_id: 2, quantity: 2 }
+            { part_id: "oleo-5w30", quantity: 2 }
           ]
         }
       }
@@ -140,13 +138,15 @@ RSpec.describe "Service Orders", type: :request do
           {
             customer_id: customer.id,
             vehicle_id:  vehicle.id,
-            items: [{ service_id: service.id, quantity: 1 }]
+            items: [{ service_id: service.id, quantity: 1 }, { part_id: "oleo-5w30", quantity: 2 }]
           }
         end
+        before { stub_part("oleo-5w30", name: "Óleo 5W30", unit_price_cents: 2000) }
         run_test! do |response|
           data = JSON.parse(response.body)
           expect(data["status"]).to eq("received")
-          expect(data["total_cents"]).to eq(5000)
+          expect(data["total_cents"]).to eq(9000)
+          expect(data["saga"]["state"]).to eq("budget_requested")
         end
       end
 
@@ -173,6 +173,22 @@ RSpec.describe "Service Orders", type: :request do
         let(:body) { { customer_id: 0, vehicle_id: vehicle.id, items: [] } }
         run_test!
       end
+
+      response "422", "unknown part", document: false do
+        let(:Authorization) { "Bearer #{token}" }
+        let(:body) { { customer_id: customer.id, vehicle_id: vehicle.id, items: [{ part_id: "nope", quantity: 1 }] } }
+        before { stub_missing_part("nope") }
+        run_test! do |response|
+          expect(JSON.parse(response.body).dig("error", "details").join).to include("nope")
+        end
+      end
+
+      response "503", "parts catalog unavailable", document: false do
+        let(:Authorization) { "Bearer #{token}" }
+        let(:body) { { customer_id: customer.id, vehicle_id: vehicle.id, items: [{ part_id: "oleo", quantity: 1 }] } }
+        before { stub_request(:get, %r{/api/v1/parts/oleo}).to_return(status: 500) }
+        run_test!
+      end
     end
   end
 
@@ -191,7 +207,7 @@ RSpec.describe "Service Orders", type: :request do
         run_test! do |response|
           data = JSON.parse(response.body)
           expect(data["status"]).to eq("received")
-          expect(data["available_events"]).to eq(["start_diagnosis"])
+          expect(data["available_events"]).to eq([])
         end
       end
 
@@ -209,30 +225,15 @@ RSpec.describe "Service Orders", type: :request do
       produces "application/json"
       parameter name: :body, in: :body, schema: {
         type: :object,
-        description: "Apenas ordens em status 'received' ou 'in_diagnosis' podem ser atualizadas.",
+        description: "Atualiza as observações de diagnóstico. Itens não podem ser alterados após a saga solicitar o orçamento.",
         properties: {
           diagnosis_notes: {
             type: :string,
             description: "Observações do diagnóstico",
             example: "Pastilhas de freio dianteiras desgastadas. Disco com leve empenamento."
-          },
-          items: {
-            type: :array,
-            description: "Substitui todos os itens da OS",
-            items: {
-              type: :object,
-              properties: {
-                service_id: { type: :integer, example: 1 },
-                part_id:    { type: :integer, example: 2 },
-                quantity:   { type: :integer, example: 1 }
-              }
-            }
           }
         },
-        example: {
-          diagnosis_notes: "Pastilhas de freio dianteiras desgastadas.",
-          items: [{ service_id: 1, quantity: 1 }, { part_id: 2, quantity: 2 }]
-        }
+        example: { diagnosis_notes: "Pastilhas de freio dianteiras desgastadas." }
       }
 
       response "200", "order updated" do
@@ -240,6 +241,14 @@ RSpec.describe "Service Orders", type: :request do
         let(:order)         { create(:service_order, customer: customer, vehicle: vehicle) }
         let(:id)            { order.id }
         let(:body)          { { diagnosis_notes: "Needs oil change" } }
+        run_test!
+      end
+
+      response "422", "items cannot be changed", document: false do
+        let(:Authorization) { "Bearer #{token}" }
+        let(:order) { create(:service_order, customer: customer, vehicle: vehicle) }
+        let(:id)    { order.id }
+        let(:body)  { { items: [{ service_id: 1, quantity: 1 }] } }
         run_test!
       end
 
@@ -253,84 +262,73 @@ RSpec.describe "Service Orders", type: :request do
     end
   end
 
-  path "/api/v1/service_orders/{id}/transitions" do
+  path "/api/v1/service_orders/{id}/deliver" do
     parameter name: :id, in: :path, type: :integer, description: "ID da ordem de serviço", example: 1
 
-    post "Transitions a service order to a new status" do
+    post "Delivers a finished service order to the customer" do
       tags "Service Orders"
       security [bearerAuth: []]
-      consumes "application/json"
       produces "application/json"
-      parameter name: :body, in: :body, schema: {
-        type: :object,
-        properties: {
-          event: {
-            type: :string,
-            enum: %w[start_diagnosis send_for_approval start_execution finalize deliver],
-            description: [
-              "Eventos disponíveis por status:",
-              "  received → start_diagnosis",
-              "  in_diagnosis → send_for_approval (gera link de aprovação para o cliente)",
-              "  awaiting_approval → send_for_approval (reenvia link, invalida token anterior)",
-              "  approved → start_execution (reserva estoque e inicia execução)",
-              "  in_execution → finalize",
-              "  finished → deliver"
-            ].join("\n"),
-            example: "start_diagnosis"
-          },
-        },
-        required: %w[event],
-        example: { event: "start_diagnosis" }
-      }
+      description [
+        "Única transição manual do atendente. As demais são conduzidas pela saga:",
+        "received → awaiting_approval (orçamento gerado) → awaiting_payment (orçamento aprovado) →",
+        "approved (pagamento confirmado) → in_diagnosis → in_execution → finished (eventos do Execution Service).",
+        "Falhas levam a OS para cancelled após a compensação."
+      ].join(" ")
 
-      response "200", "transition successful" do
-        schema type: :object,
-               properties: {
-                 order: {
-                   type: :object,
-                   properties: {
-                     id:               { type: :integer },
-                     uuid:             { type: :string },
-                     status:           { type: :string, example: "in_diagnosis" },
-                     total_cents:      { type: :integer },
-                     available_events: {
-                       type: :array,
-                       items: { type: :string },
-                       description: "Events that can be triggered from the current status",
-                       example: ["send_for_approval"]
-                     }
-                   }
-                 },
-                 approval_link: {
-                   type: :string,
-                   nullable: true,
-                   description: "Only present when event is 'send_for_approval'",
-                   example: "/api/v1/customer/service_orders/uuid/approve?token=abc123"
-                 }
-               }
-
+      response "200", "order delivered" do
         let(:Authorization) { "Bearer #{token}" }
-        let(:order) do
-          ServiceOrders::UseCases::CreateOrder.call(
-            { customer_id: customer.id, vehicle_id: vehicle.id,
-              items: [{ service_id: service.id, quantity: 1 }] },
-            performed_by: admin
-          ).payload
-        end
-        let(:id)   { order.id }
-        let(:body) { { event: "start_diagnosis" } }
+        let(:order) { create(:service_order, customer: customer, vehicle: vehicle, status: "finished") }
+        let(:id)    { order.id }
         run_test! do |response|
-          data = JSON.parse(response.body)
-          expect(data["order"]["status"]).to eq("in_diagnosis")
-          expect(data["order"]["available_events"]).to eq(["send_for_approval"])
+          expect(JSON.parse(response.body)["status"]).to eq("delivered")
         end
       end
 
-      response "422", "invalid transition" do
+      response "422", "order is not finished" do
         let(:Authorization) { "Bearer #{token}" }
-        let(:order)         { create(:service_order, customer: customer, vehicle: vehicle, status: "received") }
-        let(:id)            { order.id }
-        let(:body)          { { event: "finalize" } }
+        let(:order) { create(:service_order, customer: customer, vehicle: vehicle, status: "received") }
+        let(:id)    { order.id }
+        run_test!
+      end
+
+      response "404", "order not found", document: false do
+        let(:Authorization) { "Bearer #{token}" }
+        let(:id) { 0 }
+        run_test!
+      end
+    end
+  end
+
+  path "/api/v1/service_orders/{id}/saga" do
+    parameter name: :id, in: :path, type: :integer, description: "ID da ordem de serviço", example: 1
+
+    get "Shows the saga log of a service order" do
+      tags "Service Orders"
+      security [bearerAuth: []]
+      produces "application/json"
+      description "Estado atual da saga orquestrada e todos os comandos enviados/eventos recebidos, em ordem."
+
+      response "200", "saga found" do
+        let(:Authorization) { "Bearer #{token}" }
+        let(:order) do
+          ServiceOrders::UseCases::CreateOrder.call(
+            { customer_id: customer.id, vehicle_id: vehicle.id, items: [{ service_id: service.id, quantity: 1 }] },
+            performed_by: admin
+          ).payload
+        end
+        let(:id) { order.id }
+        run_test! do |response|
+          data = JSON.parse(response.body)
+          expect(data["state"]).to eq("budget_requested")
+          expect(data["steps"].first["message_type"]).to eq("billing.generate_budget")
+        end
+      end
+
+      response "404", "saga not found" do
+        let(:Authorization) { "Bearer #{token}" }
+        let(:order) { create(:service_order, customer: customer, vehicle: vehicle) }
+        let(:id)    { order.id }
         run_test!
       end
     end

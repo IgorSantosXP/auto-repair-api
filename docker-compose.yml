@@ -1,16 +1,46 @@
+# Local environment for the OS Service alone. For the three services together
+# (full saga) see docker-compose.saga.yml.
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile.development
+  depends_on:
+    db:
+      condition: service_healthy
+    mailpit:
+      condition: service_started
+    localstack:
+      condition: service_healthy
+  environment: &app-env
+    RAILS_ENV: development
+    DB_HOST: db
+    JWT_SECRET: dev_secret_change_in_production
+    SMTP_HOST: mailpit
+    SMTP_PORT: 1025
+    SERVICE_NAME: os-service
+    AWS_REGION: us-east-1
+    AWS_ACCESS_KEY_ID: test
+    AWS_SECRET_ACCESS_KEY: test
+    AWS_ENDPOINT_URL: http://localstack:4566
+    EVENTS_TOPIC_NAME: auto-repair-local-events
+    QUEUE_NAME: auto-repair-local-os
+    EXECUTION_SERVICE_URL: ${EXECUTION_SERVICE_URL:-http://host.docker.internal:3002}
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - .:/rails
+    - bundle_data:/usr/local/bundle
+
 services:
   db:
     image: postgres:16-alpine
-    container_name: auto_repair_db
-    restart: always
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: auto_repair_api_development
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -19,32 +49,33 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.24
-    container_name: auto_repair_mailpit
-    restart: always
+    restart: unless-stopped
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+
+  localstack:
+    image: localstack/localstack:4.4
+    environment:
+      SERVICES: sns,sqs
+      SQS_ENDPOINT_STRATEGY: path
+      LOCALSTACK_HOST: localstack:4566
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile.development
-    container_name: auto_repair_api
-    depends_on:
-      db:
-        condition: service_healthy
-      mailpit:
-        condition: service_started
-    environment:
-      RAILS_ENV: development
-      JWT_SECRET: dev_secret_change_in_production
-      SMTP_HOST: mailpit
-      SMTP_PORT: 1025
-    volumes:
-      - .:/rails
-      - bundle_data:/usr/local/bundle
+    <<: *app
     ports:
-      - "3000:3000"
+      - "${OS_PORT:-3000}:3000"
+
+  worker:
+    <<: *app
+    environment:
+      <<: *app-env
+      MESSAGING_AUTO_PROVISION: "true"
+    command: bash -c "bundle check || bundle install && bin/rails messaging:work"
 
 volumes:
   postgres_data:

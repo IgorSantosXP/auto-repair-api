@@ -1,8 +1,9 @@
 class Result
-  attr_reader :payload, :errors
+  attr_reader :payload, :errors, :status
 
-  def initialize(success:, payload: nil, errors: [])
+  def initialize(success:, payload: nil, errors: [], status: nil)
     @success = success
+    @status = status
     @payload = payload
     @errors = Array(errors)
   end
@@ -11,8 +12,8 @@ class Result
     new(success: true, payload: payload)
   end
 
-  def self.failure(errors: [])
-    new(success: false, errors: errors)
+  def self.failure(errors: [], status: nil)
+    new(success: false, errors: errors, status: status)
   end
 
   def success?

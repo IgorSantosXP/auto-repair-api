@@ -4,13 +4,9 @@ RSpec.describe ServiceOrders::UseCases::CreateOrder do
   let(:admin)    { create(:user) }
   let(:customer) { create(:customer) }
   let(:vehicle)  { create(:vehicle, customer: customer) }
-  let(:service)  { create(:service, base_price_cents: 5000) }
-  let(:part)     { create(:part, unit_price_cents: 2000) }
+  let(:service)  { create(:service, name: "Troca de óleo", base_price_cents: 5000) }
 
-  before do
-    create(:stock_movement, part: part, performed_by_user: admin,
-           movement_type: "inbound", quantity: 10)
-  end
+  before { allow(Identity::Services::JwtEncoder).to receive(:secret).and_return("test_secret") }
 
   def call(overrides = {})
     described_class.call({
@@ -30,9 +26,10 @@ RSpec.describe ServiceOrders::UseCases::CreateOrder do
       expect(result.payload.uuid).to be_present
     end
 
-    it "calculates the total from items" do
+    it "calculates the total from items and snapshots the name" do
       result = call
       expect(result.payload.total_cents).to eq(5000)
+      expect(result.payload.items.first.name).to eq("Troca de óleo")
     end
 
     it "creates a status change record" do
@@ -42,13 +39,76 @@ RSpec.describe ServiceOrders::UseCases::CreateOrder do
       expect(change.event).to eq("create")
     end
 
-    it "accepts multiple items including a part" do
+    it "starts the saga and writes the generate_budget command to the outbox" do
+      result = call
+      saga   = result.payload.saga
+
+      expect(saga.state).to eq("budget_requested")
+      expect(outbox_types).to eq(["billing.generate_budget"])
+
+      command = outbox_envelopes.first
+      expect(command.destination).to eq("billing")
+      expect(command.saga_id).to eq(saga.uuid)
+      expect(command.service_order_uuid).to eq(result.payload.uuid)
+      expect(command.payload["customer"]["id"]).to eq(customer.id.to_s)
+      expect(command.payload["items"].first).to include("kind" => "service", "unit_price_cents" => 5000)
+    end
+
+    it "prices parts through the Execution Service catalog" do
+      stub_part("oleo-5w30", name: "Óleo 5W30 1L", unit_price_cents: 4500)
+
       result = call(items: [
         { service_id: service.id, quantity: 2 },
-        { part_id:    part.id,    quantity: 1 }
+        { part_id: "oleo-5w30", quantity: 3 }
       ])
+
       expect(result).to be_success
-      expect(result.payload.total_cents).to eq(5000 * 2 + 2000)
+      expect(result.payload.total_cents).to eq(5000 * 2 + 4500 * 3)
+      part_item = result.payload.items.find { |item| item.part_id == "oleo-5w30" }
+      expect(part_item.name).to eq("Óleo 5W30 1L")
+      expect(a_request(:get, "http://localhost:3002/api/v1/parts/oleo-5w30")
+               .with(headers: { "Authorization" => /\ABearer .+/ })).to have_been_made
+    end
+
+    it "fails and rolls back when a part does not exist" do
+      stub_missing_part("nope")
+
+      result = nil
+      expect { result = call(items: [{ part_id: "nope", quantity: 1 }]) }
+        .not_to change(ServiceOrders::Entities::ServiceOrder, :count)
+
+      expect(result).to be_failure
+      expect(result.errors.first).to match(/not found/)
+      expect(Messaging::OutboxMessage.count).to eq(0)
+    end
+
+    it "rejects inactive parts" do
+      stub_part("old", active: false)
+
+      result = call(items: [{ part_id: "old", quantity: 1 }])
+
+      expect(result).to be_failure
+      expect(result.errors.first).to match(/inactive/)
+    end
+
+    it "fails when the parts catalog is unavailable" do
+      stub_request(:get, %r{/api/v1/parts/}).to_return(status: 503)
+
+      result = call(items: [{ part_id: "oleo-5w30", quantity: 1 }])
+
+      expect(result).to be_failure
+      expect(result.errors.first).to match(/unavailable/)
+    end
+
+    it "fails for an unknown service" do
+      result = call(items: [{ service_id: 0, quantity: 1 }])
+      expect(result).to be_failure
+    end
+
+    it "requires at least one item" do
+      result = call(items: [])
+      expect(result).to be_failure
+      expect(result.errors).to include("Order must have at least one item")
     end
 
     it "returns failure for missing customer" do

@@ -1,0 +1,184 @@
+# The three microservices together, talking through one LocalStack (SNS + SQS +
+# DynamoDB) exactly as they do on AWS. Each service keeps its own database.
+#
+#   docker compose -f docker-compose.saga.yml -p saga up -d --build
+#   bin/saga-e2e            # happy path + compensation, against the running stack
+#
+# The sibling repositories are expected next to this one; override with
+# BILLING_PATH / EXECUTION_PATH. Host ports: OS_PORT, BILLING_PORT,
+# EXECUTION_PORT, MAILPIT_UI_PORT.
+x-aws: &aws
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_ENDPOINT_URL: http://localstack:4566
+  EVENTS_TOPIC_NAME: auto-repair-local-events
+  JWT_SECRET: dev_secret_change_in_production
+  RAILS_ENV: development
+
+x-os: &os
+  build:
+    context: .
+    dockerfile: Dockerfile.development
+  volumes:
+    - .:/rails
+    - os_bundle:/usr/local/bundle
+  environment: &os-env
+    <<: *aws
+    DB_HOST: os-db
+    SMTP_HOST: mailpit
+    SMTP_PORT: 1025
+    SERVICE_NAME: os-service
+    DD_SERVICE: auto-repair-api
+    QUEUE_NAME: auto-repair-local-os
+    EXECUTION_SERVICE_URL: http://execution-api:3000
+
+x-billing: &billing
+  build:
+    context: ${BILLING_PATH:-../auto-repair-billing-service}
+    dockerfile: Dockerfile.development
+  volumes:
+    - ${BILLING_PATH:-../auto-repair-billing-service}:/rails
+    - billing_bundle:/usr/local/bundle
+  environment: &billing-env
+    <<: *aws
+    DB_HOST: billing-db
+    SMTP_HOST: mailpit
+    SMTP_PORT: 1025
+    SERVICE_NAME: billing-service
+    DD_SERVICE: billing-service
+    QUEUE_NAME: auto-repair-local-billing
+    BILLING_PUBLIC_URL: http://localhost:${BILLING_PORT:-3001}
+    MERCADO_PAGO_MODE: ${MERCADO_PAGO_MODE:-fake}
+    MERCADO_PAGO_ACCESS_TOKEN: ${MERCADO_PAGO_ACCESS_TOKEN:-}
+    MERCADO_PAGO_WEBHOOK_SECRET: ${MERCADO_PAGO_WEBHOOK_SECRET:-}
+    FAKE_MERCADO_PAGO_REFUND_FAILS: ${FAKE_MERCADO_PAGO_REFUND_FAILS:-false}
+
+x-execution: &execution
+  build:
+    context: ${EXECUTION_PATH:-../auto-repair-execution-service}
+    dockerfile: Dockerfile.development
+  volumes:
+    - ${EXECUTION_PATH:-../auto-repair-execution-service}:/rails
+    - execution_bundle:/usr/local/bundle
+  environment: &execution-env
+    <<: *aws
+    SERVICE_NAME: execution-service
+    DD_SERVICE: execution-service
+    QUEUE_NAME: auto-repair-local-execution
+    DYNAMODB_TABLE_PREFIX: auto-repair-local-execution
+    DYNAMODB_AUTO_PROVISION: "true"
+
+x-healthcheck: &healthcheck
+  test: ["CMD-SHELL", "curl -sf http://localhost:3000/up"]
+  interval: 5s
+  timeout: 5s
+  retries: 60
+  start_period: 30s
+
+services:
+  localstack:
+    image: localstack/localstack:4.4
+    environment:
+      SERVICES: sns,sqs,dynamodb
+      SQS_ENDPOINT_STRATEGY: path
+      LOCALSTACK_HOST: localstack:4566
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.24
+    ports:
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+
+  # Database per service: PostgreSQL for OS and Billing, DynamoDB (LocalStack) for Execution.
+  os-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - os_db:/var/lib/postgresql/data
+    healthcheck: &pg-health
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  billing-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - billing_db:/var/lib/postgresql/data
+    healthcheck: *pg-health
+
+  os-api:
+    <<: *os
+    command: bash -c "bundle check || bundle install; rm -f tmp/pids/server.pid; bin/rails db:prepare && bin/rails server -b 0.0.0.0 -p 3000"
+    ports:
+      - "${OS_PORT:-3000}:3000"
+    depends_on:
+      os-db: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+    healthcheck: *healthcheck
+
+  os-worker:
+    <<: *os
+    command: bin/rails messaging:work
+    restart: on-failure
+    environment:
+      <<: *os-env
+      MESSAGING_AUTO_PROVISION: "true"
+    depends_on:
+      os-api: { condition: service_healthy }
+
+  billing-api:
+    <<: *billing
+    command: bash -c "bundle check || bundle install; rm -f tmp/pids/server.pid; bin/rails db:prepare && bin/rails server -b 0.0.0.0 -p 3000"
+    ports:
+      - "${BILLING_PORT:-3001}:3000"
+    depends_on:
+      billing-db: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+    healthcheck: *healthcheck
+
+  billing-worker:
+    <<: *billing
+    command: bin/rails messaging:work
+    restart: on-failure
+    environment:
+      <<: *billing-env
+      MESSAGING_AUTO_PROVISION: "true"
+    depends_on:
+      billing-api: { condition: service_healthy }
+
+  execution-api:
+    <<: *execution
+    command: bash -c "bundle check || bundle install; rm -f tmp/pids/server.pid; bin/rails dynamo:seed && bin/rails server -b 0.0.0.0 -p 3000"
+    ports:
+      - "${EXECUTION_PORT:-3002}:3000"
+    depends_on:
+      localstack: { condition: service_healthy }
+    healthcheck: *healthcheck
+
+  execution-worker:
+    <<: *execution
+    command: bin/rails messaging:work
+    restart: on-failure
+    environment:
+      <<: *execution-env
+      MESSAGING_AUTO_PROVISION: "true"
+    depends_on:
+      execution-api: { condition: service_healthy }
+
+volumes:
+  os_db:
+  billing_db:
+  os_bundle:
+  billing_bundle:
+  execution_bundle:

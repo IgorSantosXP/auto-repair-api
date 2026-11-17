@@ -4,7 +4,7 @@ module Api
       class ServiceOrdersController < BaseController
         def index
           orders = ServiceOrders::Entities::ServiceOrder
-                     .includes(:vehicle, :items, :status_changes)
+                     .includes(:vehicle, :items, :status_changes, :saga)
                      .where(customer_id: current_customer.id)
                      .order(created_at: :desc)
 
@@ -13,7 +13,7 @@ module Api
 
         def show
           order = ServiceOrders::Entities::ServiceOrder
-                    .includes(:customer, :vehicle, :items, :status_changes)
+                    .includes(:customer, :vehicle, :items, :status_changes, :saga)
                     .find_by!(uuid: params[:uuid])
 
           return if authorize_order!(order)
@@ -23,49 +23,14 @@ module Api
           render_error(code: "not_found", message: "Service order not found", status: :not_found)
         end
 
-        def approve
-          result = ServiceOrders::UseCases::ApproveOrder.call(
-            uuid:  params[:uuid],
-            token: params[:token]
-          )
-
-          if result.success?
-            render_success({ message: "Order approved successfully", status: result.payload.status })
-          else
-            render_error(code: "approval_failed", message: result.errors.first, status: :unprocessable_entity)
-          end
-        end
-
-        def reject
-          result = ServiceOrders::UseCases::RejectOrder.call(
-            uuid:  params[:uuid],
-            token: params[:token]
-          )
-
-          if result.success?
-            render_success({ message: "Order rejected. Your vehicle will be available for pickup.", status: result.payload.status })
-          else
-            render_error(code: "rejection_failed", message: result.errors.first, status: :unprocessable_entity)
-          end
-        end
-
         private
-
-        def authenticate_customer!
-          return if signed_link_request?
-
-          super
-        end
-
-        def signed_link_request?
-          params[:token].present? && %w[approve reject].include?(action_name)
-        end
 
         def public_view(order)
           {
             uuid:        order.uuid,
             status:      order.status,
             total_cents: order.total_cents,
+            payment_url: order.saga&.payment_url,
             created_at:  order.created_at,
             vehicle: {
               license_plate: order.vehicle.license_plate,
@@ -78,8 +43,7 @@ module Api
                 name:            item.item_name,
                 quantity:        item.quantity,
                 unit_price_cents: item.unit_price_cents,
-                total_cents:     item.total_cents,
-                executed:        item.executed
+                total_cents:     item.total_cents
               }
             },
             history: order.status_changes.order(:created_at).map { |sc|

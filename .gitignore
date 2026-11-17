@@ -43,3 +43,7 @@
 /infra/*.tfstate
 /infra/*.tfstate.backup
 /infra/*-config
+
+/terraform/.terraform/
+/terraform/.terraform.lock.hcl
+*.tfplan

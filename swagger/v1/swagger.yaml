@@ -61,6 +61,20 @@ paths:
               required:
               - email
               - password
+  "/api/v1/customer/service_orders":
+    get:
+      summary: Lists the authenticated customer own orders
+      tags:
+      - Customer
+      security:
+      - bearerAuth: []
+      description: Requer o token emitido por POST /auth/cpf (Lambda de autenticação).
+        Retorna apenas as OS do cliente autenticado.
+      responses:
+        '200':
+          description: orders listed
+        '401':
+          description: missing or invalid token
   "/api/v1/customer/service_orders/{uuid}":
     parameters:
     - name: uuid
@@ -74,87 +88,19 @@ paths:
       summary: Shows order status to customer
       tags:
       - Customer
-      description: Endpoint público (sem autenticação). Retorna status, itens e histórico
-        da OS. Use o UUID do link enviado ao cliente.
+      security:
+      - bearerAuth: []
+      description: Requer o token emitido por POST /auth/cpf (Lambda de autenticação).
+        Retorna status, itens e histórico da OS.
       responses:
         '200':
           description: order found
+        '401':
+          description: admin token is not accepted on customer routes
+        '403':
+          description: order belongs to another customer
         '404':
           description: order not found
-  "/api/v1/customer/service_orders/{uuid}/approve":
-    parameters:
-    - name: uuid
-      in: path
-      description: UUID público da ordem de serviço
-      example: 550e8400-e29b-41d4-a716-446655440000
-      required: true
-      schema:
-        type: string
-    post:
-      summary: Customer approves the service order
-      tags:
-      - Customer
-      description: Endpoint público (sem autenticação). O token é recebido pelo cliente
-        via link (SMS/e-mail). Aprovação move a OS para 'approved'; o atendente inicia
-        a execução via start_execution.
-      parameters: []
-      responses:
-        '200':
-          description: order approved
-        '422':
-          description: invalid token
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                token:
-                  type: string
-                  description: Token de aprovação recebido no link enviado ao cliente.
-                    Válido por 7 dias.
-                  example: xK9mP2qL8nR5vT1wY3zA6bC4dE7fG0hJ
-              required:
-              - token
-              example:
-                token: xK9mP2qL8nR5vT1wY3zA6bC4dE7fG0hJ
-  "/api/v1/customer/service_orders/{uuid}/reject":
-    parameters:
-    - name: uuid
-      in: path
-      description: UUID público da ordem de serviço
-      example: 550e8400-e29b-41d4-a716-446655440000
-      required: true
-      schema:
-        type: string
-    post:
-      summary: Customer rejects the service order
-      tags:
-      - Customer
-      description: Endpoint público (sem autenticação). Rejeição zera o total da OS
-        e não movimenta estoque. O veículo ainda será entregue (transição para 'delivered'
-        pelo atendente).
-      parameters: []
-      responses:
-        '200':
-          description: order rejected
-        '422':
-          description: invalid token
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                token:
-                  type: string
-                  description: Token de aprovação recebido no link enviado ao cliente.
-                    Válido por 7 dias.
-                  example: xK9mP2qL8nR5vT1wY3zA6bC4dE7fG0hJ
-              required:
-              - token
-              example:
-                token: xK9mP2qL8nR5vT1wY3zA6bC4dE7fG0hJ
   "/api/v1/customers":
     get:
       summary: Lists customers
@@ -299,129 +245,6 @@ paths:
       responses:
         '204':
           description: customer deleted
-  "/api/v1/parts":
-    get:
-      summary: Lists parts
-      tags:
-      - Parts
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: list returned
-    post:
-      summary: Creates a part
-      tags:
-      - Parts
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '201':
-          description: part created
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                sku:
-                  type: string
-                  description: Código único da peça (Stock Keeping Unit)
-                  example: FIL-OLEO-5W30
-                name:
-                  type: string
-                  description: Nome da peça
-                  example: Filtro de óleo 5W30
-                description:
-                  type: string
-                  description: Descrição adicional da peça
-                  example: Filtro de óleo para motores 1.0 a 2.0
-                unit_price_cents:
-                  type: integer
-                  description: 'Preço unitário em centavos (ex: 2500 = R$ 25,00)'
-                  example: 2500
-              required:
-              - sku
-              - name
-              - unit_price_cents
-              example:
-                sku: FIL-OLEO-5W30
-                name: Filtro de óleo 5W30
-                description: Filtro de óleo para motores 1.0 a 2.0
-                unit_price_cents: 2500
-  "/api/v1/parts/{id}/stock":
-    parameters:
-    - name: id
-      in: path
-      description: ID da peça
-      example: 1
-      required: true
-      schema:
-        type: integer
-    get:
-      summary: Returns current stock balance
-      tags:
-      - Parts
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          description: balance returned
-  "/api/v1/parts/{part_id}/stock_movements":
-    parameters:
-    - name: part_id
-      in: path
-      description: ID da peça
-      example: 1
-      required: true
-      schema:
-        type: integer
-    post:
-      summary: Registers a stock movement
-      tags:
-      - Parts
-      security:
-      - bearerAuth: []
-      parameters: []
-      responses:
-        '201':
-          description: movement registered
-        '422':
-          description: insufficient stock
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                movement_type:
-                  type: string
-                  enum:
-                  - inbound
-                  - outbound
-                  - adjustment_in
-                  - adjustment_out
-                  description: "'inbound' = entrada por compra | 'outbound' = saída
-                    por uso | 'adjustment_in' = ajuste positivo | 'adjustment_out'
-                    = ajuste negativo"
-                  example: inbound
-                quantity:
-                  type: integer
-                  description: Quantidade (sempre positivo — o tipo determina se soma
-                    ou subtrai do saldo)
-                  example: 10
-                reason:
-                  type: string
-                  description: Motivo da movimentação
-                  example: Compra NF 1234
-              required:
-              - movement_type
-              - quantity
-              example:
-                movement_type: inbound
-                quantity: 10
-                reason: Compra NF 1234
   "/api/v1/reports/metrics":
     get:
       summary: Returns average execution time metrics
@@ -460,9 +283,10 @@ paths:
       - Service Orders
       security:
       - bearerAuth: []
-      description: 'Ordenação padrão: Em Execução > Aguardando Aprovação > Diagnóstico
-        > Recebida, mais antigas primeiro. Ordens finalizadas e entregues são excluídas
-        da listagem (exclusão lógica); use o filtro de status para consultá-las.'
+      description: 'Ordenação padrão: Em Execução > Aguardando Aprovação > Aguardando
+        Pagamento > Aprovada > Diagnóstico > Recebida, mais antigas primeiro. Ordens
+        finalizadas, entregues e canceladas são excluídas da listagem; use o filtro
+        de status para consultá-las.'
       parameters:
       - name: page
         in: query
@@ -479,8 +303,8 @@ paths:
       - name: status
         in: query
         required: false
-        description: 'Filtrar por status: received | in_diagnosis | awaiting_approval
-          | in_execution | finished | delivered'
+        description: 'Filtrar por status: received | awaiting_approval | awaiting_payment
+          | approved | in_diagnosis | in_execution | finished | delivered | cancelled'
         example: received
         schema:
           type: string
@@ -592,8 +416,10 @@ paths:
                   example: Cliente relata barulho ao frear
                 items:
                   type: array
-                  description: Lista de serviços e/ou peças da OS. Cada item deve
-                    ter exatamente um de service_id ou part_id.
+                  description: Lista de serviços e/ou peças da OS (mínimo 1). Cada
+                    item deve ter exatamente um de service_id ou part_id. Peças são
+                    validadas no catálogo do Execution Service. Ao criar a OS a saga
+                    solicita o orçamento ao Billing Service.
                   items:
                     type: object
                     properties:
@@ -602,9 +428,10 @@ paths:
                         description: ID do serviço (use este ou part_id, nunca ambos)
                         example: 1
                       part_id:
-                        type: integer
-                        description: ID da peça (use este ou service_id, nunca ambos)
-                        example: 2
+                        type: string
+                        description: ID da peça no Execution Service (use este ou
+                          service_id, nunca ambos)
+                        example: oleo-5w30
                       quantity:
                         type: integer
                         description: Quantidade
@@ -618,7 +445,7 @@ paths:
                 items:
                 - service_id: 1
                   quantity: 1
-                - part_id: 2
+                - part_id: oleo-5w30
                   quantity: 2
   "/api/v1/service_orders/{id}":
     parameters:
@@ -657,37 +484,17 @@ paths:
           application/json:
             schema:
               type: object
-              description: Apenas ordens em status 'received' ou 'in_diagnosis' podem
-                ser atualizadas.
+              description: Atualiza as observações de diagnóstico. Itens não podem
+                ser alterados após a saga solicitar o orçamento.
               properties:
                 diagnosis_notes:
                   type: string
                   description: Observações do diagnóstico
                   example: Pastilhas de freio dianteiras desgastadas. Disco com leve
                     empenamento.
-                items:
-                  type: array
-                  description: Substitui todos os itens da OS
-                  items:
-                    type: object
-                    properties:
-                      service_id:
-                        type: integer
-                        example: 1
-                      part_id:
-                        type: integer
-                        example: 2
-                      quantity:
-                        type: integer
-                        example: 1
               example:
                 diagnosis_notes: Pastilhas de freio dianteiras desgastadas.
-                items:
-                - service_id: 1
-                  quantity: 1
-                - part_id: 2
-                  quantity: 2
-  "/api/v1/service_orders/{id}/transitions":
+  "/api/v1/service_orders/{id}/deliver":
     parameters:
     - name: id
       in: path
@@ -697,74 +504,43 @@ paths:
       schema:
         type: integer
     post:
-      summary: Transitions a service order to a new status
+      summary: Delivers a finished service order to the customer
       tags:
       - Service Orders
       security:
       - bearerAuth: []
-      parameters: []
+      description: 'Única transição manual do atendente. As demais são conduzidas
+        pela saga: received → awaiting_approval (orçamento gerado) → awaiting_payment
+        (orçamento aprovado) → approved (pagamento confirmado) → in_diagnosis → in_execution
+        → finished (eventos do Execution Service). Falhas levam a OS para cancelled
+        após a compensação.'
       responses:
         '200':
-          description: transition successful
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  order:
-                    type: object
-                    properties:
-                      id:
-                        type: integer
-                      uuid:
-                        type: string
-                      status:
-                        type: string
-                        example: in_diagnosis
-                      total_cents:
-                        type: integer
-                      available_events:
-                        type: array
-                        items:
-                          type: string
-                        description: Events that can be triggered from the current
-                          status
-                        example:
-                        - send_for_approval
-                  approval_link:
-                    type: string
-                    nullable: true
-                    description: Only present when event is 'send_for_approval'
-                    example: "/api/v1/customer/service_orders/uuid/approve?token=abc123"
+          description: order delivered
         '422':
-          description: invalid transition
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                event:
-                  type: string
-                  enum:
-                  - start_diagnosis
-                  - send_for_approval
-                  - start_execution
-                  - finalize
-                  - deliver
-                  description: |-
-                    Eventos disponíveis por status:
-                      received → start_diagnosis
-                      in_diagnosis → send_for_approval (gera link de aprovação para o cliente)
-                      awaiting_approval → send_for_approval (reenvia link, invalida token anterior)
-                      approved → start_execution (reserva estoque e inicia execução)
-                      in_execution → finalize
-                      finished → deliver
-                  example: start_diagnosis
-              required:
-              - event
-              example:
-                event: start_diagnosis
+          description: order is not finished
+  "/api/v1/service_orders/{id}/saga":
+    parameters:
+    - name: id
+      in: path
+      description: ID da ordem de serviço
+      example: 1
+      required: true
+      schema:
+        type: integer
+    get:
+      summary: Shows the saga log of a service order
+      tags:
+      - Service Orders
+      security:
+      - bearerAuth: []
+      description: Estado atual da saga orquestrada e todos os comandos enviados/eventos
+        recebidos, em ordem.
+      responses:
+        '200':
+          description: saga found
+        '404':
+          description: saga not found
   "/api/v1/services":
     get:
       summary: Lists services

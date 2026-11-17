@@ -42,6 +42,35 @@ module Telemetry
     increment("integration.error", tags: ["integration:#{integration}", "reason:#{reason}"])
   end
 
+  def saga_started
+    increment("saga.started")
+  end
+
+  def saga_step(type:, direction:)
+    increment("saga.step", tags: ["type:#{type}", "direction:#{direction}"])
+  end
+
+  def saga_completed(duration_seconds:)
+    increment("saga.completed")
+    distribution("saga.duration", duration_seconds)
+  end
+
+  def saga_failed(reason:)
+    increment("saga.failed", tags: ["reason:#{reason.to_s.split(':').first}"])
+  end
+
+  def saga_compensating(reason:)
+    increment("saga.compensating", tags: ["reason:#{reason.to_s.split(':').first}"])
+  end
+
+  def saga_compensated(reason:)
+    increment("saga.compensated", tags: ["reason:#{reason.to_s.split(':').first}"])
+  end
+
+  def saga_compensation_failed(reason:)
+    increment("saga.compensation_failed", tags: ["reason:#{reason}"])
+  end
+
   def increment(metric, tags: [])
     client&.increment(metric, tags: base_tags + tags)
   rescue StandardError => e

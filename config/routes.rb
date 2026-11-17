@@ -15,24 +15,15 @@ Rails.application.routes.draw do
 
       resources :services
 
-      resources :parts do
-        member { get :stock }
-        resources :stock_movements, only: [:index, :create]
-      end
-
-      resources :service_orders do
-        member { post :transitions }
+      resources :service_orders, except: [:destroy] do
+        member do
+          post :deliver
+          get  :saga
+        end
       end
 
       namespace :customer do
-        resources :service_orders, param: :uuid, only: [:index, :show] do
-          member do
-            post :approve
-            get  :approve
-            post :reject
-            get  :reject
-          end
-        end
+        resources :service_orders, param: :uuid, only: [:index, :show]
       end
 
       get "reports/metrics", to: "reports#metrics"

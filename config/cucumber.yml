@@ -1,0 +1,2 @@
+default: --publish-quiet --format pretty --strict features
+ci: --publish-quiet --format progress --format html --out tmp/cucumber.html --strict features
