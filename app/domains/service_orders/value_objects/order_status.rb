@@ -1,7 +1,12 @@
 module ServiceOrders
   module ValueObjects
     class OrderStatus
-      ALL = %w[received in_diagnosis awaiting_approval approved in_execution finished delivered].freeze
+      ALL = %w[
+        received awaiting_approval awaiting_payment approved
+        in_diagnosis in_execution finished delivered cancelled
+      ].freeze
+
+      TERMINAL = %w[delivered cancelled].freeze
 
       attr_reader :value
 
@@ -14,7 +19,7 @@ module ServiceOrders
       end
 
       def terminal?
-        value == "delivered"
+        TERMINAL.include?(value)
       end
 
       def to_s

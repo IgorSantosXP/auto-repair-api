@@ -17,6 +17,11 @@ configMapGenerator:
       - DD_SERVICE=auto-repair-api
       - SMTP_HOST=mailpit.auto-repair-prod.svc.cluster.local
       - SMTP_PORT=1025
+      - SERVICE_NAME=os-service
+      - AWS_REGION=us-east-1
+      - EVENTS_TOPIC_ARN=arn:aws:sns:us-east-1:814623398856:auto-repair-prod-events
+      - QUEUE_URL=https://sqs.us-east-1.amazonaws.com/814623398856/auto-repair-prod-os
+      - EXECUTION_SERVICE_URL=http://api.auto-repair-execution-prod.svc.cluster.local
 
 patches:
   - path: service-nodeport.yaml

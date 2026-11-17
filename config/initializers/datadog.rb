@@ -16,6 +16,10 @@ Datadog.configure do |c|
   c.tracing.instrument :pg
   c.tracing.instrument :active_support
   c.tracing.instrument :action_mailer
+  # Outgoing REST calls (parts catalog) carry the trace headers to the Execution Service;
+  # SNS/SQS calls show up as spans, and the envelope carries the context across the bus.
+  c.tracing.instrument :http, split_by_domain: true
+  c.tracing.instrument :aws
 
   c.runtime_metrics.enabled = true
 end

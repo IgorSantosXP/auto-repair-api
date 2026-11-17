@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""End-to-end check of the service order saga across the three microservices.
+
+Runs against the stack from docker-compose.saga.yml (or any deployment, through
+the URLs below) and drives two scenarios:
+
+  1. happy path   : budget -> customer approval -> payment -> execution -> delivery
+  2. compensation : part without stock -> execution.failed -> refund -> order cancelled
+
+Environment: OS_URL, BILLING_URL, EXECUTION_URL, MAILPIT_URL,
+ADMIN_EMAIL, ADMIN_PASSWORD, TIMEOUT (seconds per wait, default 60).
+"""
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+
+OS_URL = os.environ.get("OS_URL", "http://localhost:3000").rstrip("/")
+BILLING_URL = os.environ.get("BILLING_URL", "http://localhost:3001").rstrip("/")
+EXECUTION_URL = os.environ.get("EXECUTION_URL", "http://localhost:3002").rstrip("/")
+MAILPIT_URL = os.environ.get("MAILPIT_URL", "http://localhost:8025").rstrip("/")
+TIMEOUT = int(os.environ.get("TIMEOUT", "60"))
+
+
+def request(method, url, body=None, token=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read()
+            return resp.status, json.loads(raw) if raw else None
+    except urllib.error.HTTPError as err:
+        raw = err.read()
+        try:
+            return err.code, json.loads(raw)
+        except ValueError:
+            return err.code, raw.decode(errors="replace")
+
+
+def expect(status, body, wanted, what):
+    if status != wanted:
+        fail(f"{what}: expected HTTP {wanted}, got {status}: {body}")
+    return body
+
+
+def fail(message):
+    print(f"\n  FAIL {message}")
+    sys.exit(1)
+
+
+def step(message):
+    print(f"  - {message}")
+
+
+def wait_for(description, probe):
+    deadline = time.time() + TIMEOUT
+    last = None
+    while time.time() < deadline:
+        ok, last = probe()
+        if ok:
+            step(f"{description} ({last})")
+            return last
+        time.sleep(1)
+    fail(f"timed out waiting for {description}; last value: {last}")
+
+
+def order_status(order_id, token):
+    def probe(*wanted):
+        _, order = request("GET", f"{OS_URL}/api/v1/service_orders/{order_id}", token=token)
+        return order["status"] in wanted, order["status"]
+    return probe
+
+
+def saga_state(order_id, token, wanted):
+    def probe():
+        _, saga = request("GET", f"{OS_URL}/api/v1/service_orders/{order_id}/saga", token=token)
+        state = saga.get("state") if isinstance(saga, dict) else saga
+        return state == wanted, state
+    return probe
+
+
+def approval_token(service_order_uuid):
+    """Reads the approval link Billing e-mailed to the customer."""
+    def probe():
+        _, listing = request("GET", f"{MAILPIT_URL}/api/v1/search?query={service_order_uuid[:8]}")
+        for message in (listing or {}).get("messages", []):
+            _, full = request("GET", f"{MAILPIT_URL}/api/v1/message/{message['ID']}")
+            match = re.search(r"token=([\w-]+)", (full or {}).get("Text", ""))
+            if match:
+                return True, match.group(1)
+        return False, None
+    return wait_for("budget e-mail delivered with the approval link", probe)
+
+
+def create_order(admin, part_id, plate):
+    _, services = request("GET", f"{OS_URL}/api/v1/services", token=admin)
+    body = {
+        "customer": {"kind": "individual", "document": "529.982.247-25", "name": "Ana Lima",
+                     "email": "ana@example.com"},
+        "vehicle": {"license_plate": plate, "brand": "Chevrolet", "model": "Onix", "year": 2020},
+        "diagnosis_notes": "Barulho ao frear",
+        "items": [{"service_id": services[0]["id"], "quantity": 1}, {"part_id": part_id, "quantity": 1}],
+    }
+    order = expect(*request("POST", f"{OS_URL}/api/v1/service_orders", body, admin), 201, "create order")
+    step(f"order #{order['id']} created ({order['uuid']}), total {order['total_cents']} cents")
+    return order
+
+
+def approve_and_pay(order, admin):
+    uuid = order["uuid"]
+    wait_for("OS awaiting approval", lambda: order_status(order["id"], admin)("awaiting_approval"))
+    token = approval_token(uuid)
+    approved = expect(*request("POST", f"{BILLING_URL}/api/v1/budgets/{uuid}/approve?token={token}"), 200,
+                      "approve budget")
+    step(f"customer approved the budget, payment link: {approved.get('payment_url')}")
+    wait_for("OS awaiting payment", lambda: order_status(order["id"], admin)("awaiting_payment"))
+    expect(*request("POST", f"{BILLING_URL}/api/v1/payments/{uuid}/simulate", {"status": "approved"}, admin), 200,
+           "payment notification")
+    step("Mercado Pago (fake) confirmed the payment")
+
+
+def happy_path(admin):
+    print("\n[1] Happy path")
+    order = create_order(admin, "oleo-5w30", "SAG1A11")
+    approve_and_pay(order, admin)
+    uuid = order["uuid"]
+
+    def queued():
+        status, execution = request("GET", f"{EXECUTION_URL}/api/v1/executions/{uuid}", token=admin)
+        return status == 200, execution.get("status") if isinstance(execution, dict) else status
+    wait_for("execution queued in the Execution Service (stock reserved)", queued)
+
+    for action, wanted in [("start_diagnosis", "in_diagnosis"), ("start_repair", "in_execution"),
+                           ("finish", "finished")]:
+        expect(*request("POST", f"{EXECUTION_URL}/api/v1/executions/{uuid}/{action}", token=admin), 200, action)
+        wait_for(f"OS {wanted} after {action}", lambda w=wanted: order_status(order["id"], admin)(w))
+
+    delivered = expect(*request("POST", f"{OS_URL}/api/v1/service_orders/{order['id']}/deliver", token=admin), 200,
+                       "deliver")
+    step(f"order delivered (status {delivered['status']})")
+    wait_for("saga completed", saga_state(order["id"], admin, "completed"))
+
+
+def compensation(admin):
+    print("\n[2] Compensation: no stock for the part")
+    order = create_order(admin, "kit-embreagem", "SAG2B22")
+    approve_and_pay(order, admin)
+    wait_for("OS cancelled after the refund", lambda: order_status(order["id"], admin)("cancelled"))
+    wait_for("saga compensated", saga_state(order["id"], admin, "compensated"))
+
+    _, budget = request("GET", f"{BILLING_URL}/api/v1/budgets/{order['uuid']}", token=admin)
+    step(f"Billing budget status: {budget.get('status')}, payment: {budget.get('payment_status')}")
+    if budget.get("status") != "refunded":
+        fail("budget should be refunded")
+
+
+def main():
+    print(f"OS {OS_URL} | Billing {BILLING_URL} | Execution {EXECUTION_URL} | Mailpit {MAILPIT_URL}")
+    login = expect(*request("POST", f"{OS_URL}/api/v1/auth/login", {
+        "email": os.environ.get("ADMIN_EMAIL", "admin@autorepair.com"),
+        "password": os.environ.get("ADMIN_PASSWORD", "admin123456"),
+    }), 200, "admin login")
+    admin = login["token"]
+
+    happy_path(admin)
+    compensation(admin)
+    print("\nAll saga scenarios passed.")
+
+
+if __name__ == "__main__":
+    main()

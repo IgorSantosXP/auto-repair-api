@@ -37,7 +37,7 @@ class ApplicationController < ActionController::API
         code: "validation_error",
         message: "Validation failed",
         details: result.errors,
-        status: :unprocessable_entity
+        status: result.status || :unprocessable_entity
       )
     end
   end

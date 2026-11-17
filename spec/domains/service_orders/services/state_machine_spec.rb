@@ -2,54 +2,51 @@ require "rails_helper"
 
 RSpec.describe ServiceOrders::Services::StateMachine do
   describe ".transition" do
-    it "allows received -> in_diagnosis" do
-      expect(described_class.transition("received", "start_diagnosis")).to eq("in_diagnosis")
+    {
+      ["received", "budget_generated"]          => "awaiting_approval",
+      ["awaiting_approval", "budget_approved"]  => "awaiting_payment",
+      ["awaiting_payment", "payment_confirmed"] => "approved",
+      ["approved", "start_diagnosis"]           => "in_diagnosis",
+      ["in_diagnosis", "start_repair"]          => "in_execution",
+      ["in_execution", "finish"]                => "finished",
+      ["finished", "deliver"]                   => "delivered",
+      ["awaiting_approval", "cancel"]           => "cancelled",
+      ["approved", "cancel"]                    => "cancelled"
+    }.each do |(from, event), to|
+      it "moves #{from} --#{event}--> #{to}" do
+        expect(described_class.transition(from, event)).to eq(to)
+      end
     end
 
-    it "allows in_diagnosis -> awaiting_approval" do
-      expect(described_class.transition("in_diagnosis", "send_for_approval")).to eq("awaiting_approval")
+    it "returns nil for an invalid event" do
+      expect(described_class.transition("received", "deliver")).to be_nil
     end
 
-    it "allows awaiting_approval -> approved on approve" do
-      expect(described_class.transition("awaiting_approval", "approve")).to eq("approved")
-    end
-
-    it "allows approved -> in_execution on start_execution" do
-      expect(described_class.transition("approved", "start_execution")).to eq("in_execution")
-    end
-
-    it "allows awaiting_approval -> finished on reject" do
-      expect(described_class.transition("awaiting_approval", "reject")).to eq("finished")
-    end
-
-    it "allows in_execution -> finished" do
-      expect(described_class.transition("in_execution", "finalize")).to eq("finished")
-    end
-
-    it "allows finished -> delivered" do
-      expect(described_class.transition("finished", "deliver")).to eq("delivered")
-    end
-
-    it "returns nil for invalid transition" do
-      expect(described_class.transition("received", "finalize")).to be_nil
-    end
-
-    it "returns nil for unknown event" do
-      expect(described_class.transition("received", "nonexistent")).to be_nil
-    end
-
-    it "returns nil from terminal status" do
-      expect(described_class.transition("delivered", "deliver")).to be_nil
+    it "does not allow cancelling once the repair started" do
+      expect(described_class.transition("in_execution", "cancel")).to be_nil
     end
   end
 
   describe ".valid_events_for" do
-    it "returns correct events for received" do
-      expect(described_class.valid_events_for("received")).to eq(["start_diagnosis"])
+    it "lists the events of a status" do
+      expect(described_class.valid_events_for("received")).to eq(%w[budget_generated cancel])
     end
 
-    it "returns empty for delivered" do
-      expect(described_class.valid_events_for("delivered")).to be_empty
+    it "returns empty for terminal statuses" do
+      expect(described_class.valid_events_for("delivered")).to eq([])
+      expect(described_class.valid_events_for("cancelled")).to eq([])
     end
+  end
+
+  describe ".admin_events_for" do
+    it "only exposes events an admin can trigger" do
+      expect(described_class.admin_events_for("finished")).to eq(["deliver"])
+      expect(described_class.admin_events_for("received")).to eq([])
+    end
+  end
+
+  describe ".valid_transition?" do
+    it { expect(described_class.valid_transition?("finished", "deliver")).to be true }
+    it { expect(described_class.valid_transition?("received", "finish")).to be false }
   end
 end

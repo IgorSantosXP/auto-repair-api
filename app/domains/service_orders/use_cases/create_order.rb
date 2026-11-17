@@ -1,7 +1,14 @@
 module ServiceOrders
   module UseCases
+    # Opens a service order and starts the saga in the same transaction: the
+    # `billing.generate_budget` command is written to the outbox together with
+    # the order, so either both exist or neither does.
     class CreateOrder
-      def self.call(params, performed_by:)
+      def self.call(params, performed_by:, parts_catalog: nil)
+        parts_catalog ||= Gateways::PartsCatalog.new(
+          auth_token: Identity::Services::JwtEncoder.encode({ "sub" => performed_by.id })
+        )
+
         ActiveRecord::Base.transaction do
           customer = resolve_customer(params)
           vehicle  = resolve_vehicle(params, customer)
@@ -18,12 +25,17 @@ module ServiceOrders
             return Result.failure(errors: order.errors.full_messages)
           end
 
+          if Array(params[:items]).empty?
+            Telemetry.order_processing_failed(stage: "creation", reason: "no_items")
+            return Result.failure(errors: ["Order must have at least one item"])
+          end
+
           order.save!
 
-          items = build_items(order, Array(params[:items]))
-          if items[:errors].any?
+          errors = Services::ItemBuilder.new(parts_catalog: parts_catalog).build(order, Array(params[:items]))
+          if errors.any?
             Telemetry.order_processing_failed(stage: "creation", reason: "invalid_items")
-            return Result.failure(errors: items[:errors])
+            raise ItemsInvalid.new(errors)
           end
 
           order.update!(total_cents: Services::BudgetCalculator.calculate(order.items.reload))
@@ -37,16 +49,31 @@ module ServiceOrders
             performed_by:         "admin"
           )
 
+          Orchestration::ServiceOrderSaga.start(order)
           Telemetry.order_created(order)
 
           Result.success(payload: order.reload)
         end
+      rescue ItemsInvalid => e
+        Result.failure(errors: e.errors)
       rescue ActiveRecord::RecordInvalid => e
         Telemetry.order_processing_failed(stage: "creation", reason: "invalid_record")
         Result.failure(errors: e.record.errors.full_messages)
       rescue Errors::VehicleOwnershipConflict => e
         Telemetry.order_processing_failed(stage: "creation", reason: "vehicle_ownership_conflict")
         Result.failure(errors: [e.message])
+      rescue Errors::PartsCatalogUnavailable => e
+        Telemetry.order_processing_failed(stage: "creation", reason: "parts_catalog_unavailable")
+        Result.failure(errors: [e.message], status: :service_unavailable)
+      end
+
+      class ItemsInvalid < StandardError
+        attr_reader :errors
+
+        def initialize(errors)
+          @errors = errors
+          super(errors.join(", "))
+        end
       end
 
       private_class_method def self.resolve_customer(params)
@@ -87,39 +114,6 @@ module ServiceOrders
           Registries::ValueObjects::Cnpj.new(document).normalized
         else
           Registries::ValueObjects::Cpf.new(document).normalized
-        end
-      end
-
-      private_class_method def self.build_items(order, items_params)
-        errors = []
-
-        items_params.each do |item_params|
-          price = resolve_price(item_params)
-          item  = Entities::ServiceOrderItem.new(
-            service_order_id: order.id,
-            service_id:       item_params[:service_id],
-            part_id:          item_params[:part_id],
-            quantity:         item_params[:quantity].to_i,
-            unit_price_cents: price
-          )
-
-          unless item.save
-            errors.concat(item.errors.full_messages)
-          end
-        end
-
-        { errors: errors }
-      end
-
-      private_class_method def self.resolve_price(item_params)
-        return item_params[:unit_price_cents].to_i if item_params[:unit_price_cents].present?
-
-        if item_params[:service_id].present?
-          Registries::Entities::Service.find(item_params[:service_id]).base_price_cents
-        elsif item_params[:part_id].present?
-          Inventory::Entities::Part.find(item_params[:part_id]).unit_price_cents
-        else
-          0
         end
       end
     end

@@ -21,19 +21,10 @@ RSpec.describe ServiceOrderMailer, type: :mailer do
       expect(mail.body.encoded).to include(vehicle.license_plate)
     end
 
-    it "includes approval and rejection links when present" do
-      approve = "http://localhost:3000/api/v1/customer/service_orders/#{order.uuid}/approve?token=abc123"
-      reject  = "http://localhost:3000/api/v1/customer/service_orders/#{order.uuid}/reject?token=abc123"
-      mail    = described_class.with(order: order, approval_link: approve, rejection_link: reject).status_changed
+    it "explains the refund when the order is cancelled" do
+      mail = described_class.with(order: order, status: "cancelled").status_changed
 
-      expect(mail.body.encoded).to include(approve)
-      expect(mail.body.encoded).to include(reject)
-    end
-
-    it "omits approval instructions when no link is given" do
-      mail = described_class.with(order: order).status_changed
-
-      expect(mail.body.encoded).not_to include("Approve the budget")
+      expect(mail.body.encoded).to include("refunded")
     end
   end
 end

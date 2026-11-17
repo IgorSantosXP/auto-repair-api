@@ -27,6 +27,9 @@ gem "datadog", "~> 2.3"
 gem "dogstatsd-ruby", "~> 5.6"
 gem "lograge"
 
+gem "aws-sdk-sns", "~> 1.0"
+gem "aws-sdk-sqs", "~> 1.0"
+
 group :development, :test do
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
   gem "bundler-audit", require: false
@@ -39,4 +42,6 @@ group :development, :test do
   gem "rswag-specs"
   gem "simplecov", require: false
   gem "database_cleaner-active_record"
+  gem "webmock"
+  gem "cucumber-rails", require: false
 end

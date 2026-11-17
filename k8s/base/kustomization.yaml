@@ -7,6 +7,8 @@ resources:
   - hpa.yaml
   - migrate-job.yaml
   - mailpit.yaml
+  - serviceaccount.yaml
+  - worker.yaml
 
 commonLabels:
   app.kubernetes.io/part-of: auto-repair

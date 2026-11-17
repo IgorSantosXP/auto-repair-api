@@ -18,12 +18,13 @@ RSpec.describe ServiceOrders::Queries::ListOrdersQuery do
       expect(described_class.call.to_a).to eq([in_execution, awaiting_approval, in_diagnosis, received])
     end
 
-    it "ranks approved orders right below in_execution" do
-      awaiting_approval = create_order("awaiting_approval")
+    it "slots the saga statuses between awaiting_approval and in_diagnosis" do
+      in_diagnosis      = create_order("in_diagnosis")
       approved          = create_order("approved")
-      in_execution      = create_order("in_execution")
+      awaiting_payment  = create_order("awaiting_payment")
+      awaiting_approval = create_order("awaiting_approval")
 
-      expect(described_class.call.to_a).to eq([in_execution, approved, awaiting_approval])
+      expect(described_class.call.to_a).to eq([awaiting_approval, awaiting_payment, approved, in_diagnosis])
     end
 
     it "orders oldest first within the same status" do
@@ -33,10 +34,11 @@ RSpec.describe ServiceOrders::Queries::ListOrdersQuery do
       expect(described_class.call.to_a).to eq([older, newer])
     end
 
-    it "excludes finished and delivered orders by default" do
+    it "excludes finished, delivered and cancelled orders by default" do
       active = create_order("received")
       create_order("finished")
       create_order("delivered")
+      create_order("cancelled")
 
       expect(described_class.call.to_a).to eq([active])
     end
