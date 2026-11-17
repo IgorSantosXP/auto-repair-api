@@ -16,10 +16,14 @@ RSpec.describe Messaging do
 
   describe "module configuration" do
     around do |example|
-      original = ENV.to_h.slice("AWS_ENDPOINT_URL", "AWS_REGION", "SERVICE_NAME")
+      keys     = %w[AWS_ENDPOINT_URL AWS_REGION SERVICE_NAME AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY]
+      original = ENV.to_h.slice(*keys)
+      # Static credentials keep the SDK from probing the EC2 metadata endpoint on CI runners.
+      ENV["AWS_ACCESS_KEY_ID"]     = "test"
+      ENV["AWS_SECRET_ACCESS_KEY"] = "test"
       example.run
     ensure
-      %w[AWS_ENDPOINT_URL AWS_REGION SERVICE_NAME].each { |key| ENV[key] = original[key] }
+      keys.each { |key| ENV[key] = original[key] }
       Messaging.reset!
     end
 
