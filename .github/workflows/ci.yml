@@ -18,7 +18,7 @@ env:
 
 jobs:
   security:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -33,7 +33,7 @@ jobs:
         run: bin/bundler-audit
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -91,7 +91,7 @@ jobs:
 
   quality:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -113,7 +113,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   manifests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -139,7 +139,7 @@ jobs:
   deploy:
     needs: [security, test, quality, manifests]
     if: github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
 
     steps:
